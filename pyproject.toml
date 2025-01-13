@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}  # Map the root to "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project]
+name = "dprojectstools"
+version = "0.0.3"
+authors = [
+  { name="Marc Delos", email="marcdp@dprojects.com" },
+]
+description = "A Set of development tools"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/marcdp/dprojectstools"
+Issues = "https://github.com/marcdp/dprojectstools/issues"
