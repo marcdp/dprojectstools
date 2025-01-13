@@ -134,9 +134,6 @@ class CommandsManager:
     
         self._commands.sort(key=lambda x: x.index)
 
-        #for command in self._commands:
-        #    print(command.name, command.index)
-
     def showMenu(self):
         # sort
         self.sort()
@@ -148,10 +145,12 @@ class CommandsManager:
         indent = self._indent * "    "
         while True:
             # show menu
-            print(indent + "Escoge una opción:")
-            print(indent + "==================")
+            print(indent + "Select an option:")
+            print(indent + "=================")
             command_ant = None
             for command in self._commands:
+                if command_ant == None and command.index > 1:
+                    print(indent + f"   : ")
                 if command_ant != None and command_ant.name[0] != command.name[0]:
                     print(indent + f"   : ")
                 print(indent + f"{command.index:2} : {command.title}")

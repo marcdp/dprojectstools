@@ -10,11 +10,11 @@ where = ["src"]
 
 [project]
 name = "dprojectstools"
-version = "0.0.3"
+version = "0.0.4"
 authors = [
   { name="Marc Delos", email="marcdp@dprojects.com" },
 ]
-description = "A Set of development tools"
+description = "A set of development tools"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [

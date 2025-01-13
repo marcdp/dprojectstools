@@ -1,2 +1,2 @@
-# xmenu
-A command line menu controller
+# dprojectstools
+A set of development tools
