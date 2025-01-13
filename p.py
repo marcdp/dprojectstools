@@ -33,9 +33,9 @@ def package_build():
 def package_build_and_publish():
     # build
     package_build()
-    #publish
+    # publish
     myenv = os.environ.copy()
-    myenv["TWINE_PASSWORD"] = secrets.get("TWINE_PASSWORD")
+    myenv["TWINE_PASSWORD"] = secrets.get("PYPI_AUTH_TOKEN")
     subprocess.run("py -m twine upload dist/*", env = myenv)
 
 @command("Git status", index = 90)

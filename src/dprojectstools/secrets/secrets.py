@@ -20,11 +20,11 @@ class SecretsManager():
     
 
     # ctr
-    def __init__(self, name, password = None):
+    def __init__(self, name, password = "keyring:"):
         folder = Path(os.path.join(Path.home(), ".secrets"))
         folder.mkdir(parents=True, exist_ok=True)
         self._path = Path(folder, name + ".json")
-        if not password is None:
+        if not password == "":
             if password.startswith("keyring:"):
                 username = password[password.index(":") + 1:]
                 if username == "":

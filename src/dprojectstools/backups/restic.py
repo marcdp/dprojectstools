@@ -24,18 +24,18 @@ class Restic:
         return subprocess.run("restic init", env = self._getEnv())
 
     @command("Backup ", index = 10)
-    def backup(self):
-        return subprocess.run("restic backup ./data ./data2 --verbose", env = self._getEnv())
+    def backup(self, path):
+        return subprocess.run("restic backup {0} --verbose".format(path), env = self._getEnv())
 
     @command("List snapshots ", index = 20)
     def snapshots_list(self):
         return subprocess.run("restic snapshots", env = self._getEnv())
     
-    @command("List snapshot contents ")
+    @command("List snapshot contents")
     def snapshots_contents(self, 
             id: Annotated[str, "ID"]
         ):
-        return subprocess.run("restic ls --long {0}".format(id), env = self._getEnv())
+        return subprocess.run("restic ls {0}".format(id), env = self._getEnv())
 
     @command("Restore ")
     def snapshots_restore(self, 
