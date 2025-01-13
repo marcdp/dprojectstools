@@ -1,33 +1,27 @@
 #!/usr/bin/env python3
 from dprojectstools.commands import command, CommandsManager
+from dprojectstools.secrets import SecretsManager
 import subprocess
 import sys
 import os
 import shutil
 
-
-# prepare environment
+# # prepare environment
 # pip install --upgrade build
 # py -m pip install --upgrade twine
-
-# increase version
+#
+# # increase version
 # ... manuallly
-
-# build
+#
+# # build
 # py -m build
-
-# deploy in test server
-# py -m twine upload --repository testpypi dist/*
-
-# install from test
-# py -m pip install --index-url https://test.pypi.org/simple/ --no-deps -U dprojects_xmenu
-
-# deploy in prod server
+#
+# # publish package to index
 # py -m twine upload dist/*
 
-# install from test
-# py -m pip install --index-url https://test.pypi.org/simple/ --no-deps -U xmenu
 
+# secrets 
+secrets = SecretsManager("dprojectstools")
 
 # controllers
 @command("Package build", index = 10)
@@ -39,10 +33,12 @@ def package_build():
 def package_build_and_publish():
     # build
     package_build()
-    subprocess.run("py -m twine upload dist/*")
+    #publish
+    myenv = os.environ.copy()
+    myenv["TWINE_PASSWORD"] = secrets.get("TWINE_PASSWORD")
+    subprocess.run("py -m twine upload dist/*", env = myenv)
 
-
-@command("Giet status", index = 90)
+@command("Git status", index = 90)
 def git_status():
     return subprocess.run("git status --short")
 

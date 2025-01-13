@@ -3,7 +3,7 @@ import os
 import json
 import keyring
 from typing import Annotated
-from ..commands import command
+from ..commands import command, CommandsManager
 from ..crypto import aes_decrypt, aes_encrypt, password_generate
 
 # consts
@@ -30,8 +30,6 @@ class SecretsManager():
                 if username == "":
                     username = os.getlogin()
                 password = keyring.get_password(KEYRING_APP, username)
-                print(username)
-                print(password)
                 if password is None:
                     password = password_generate()
                     keyring.set_password(KEYRING_APP, username, password)
@@ -80,7 +78,7 @@ class SecretsManager():
             file.write(text)
     
     
-    # ui method
+    # commands
     @command("List secrets", index = 90)
     def secrets_list(self):
         for key in self.keys():
@@ -102,4 +100,10 @@ class SecretsManager():
             name: Annotated[str, "Name"]
         ):
         self.delete(name)
+
+    # methods
+    def exec(self, argv):
+        commandsManager = CommandsManager()
+        commandsManager.register(self)
+        return commandsManager.execute(argv)        
 

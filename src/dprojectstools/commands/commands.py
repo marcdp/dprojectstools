@@ -86,8 +86,7 @@ class CommandsManager:
         command_title = getattr(func, "title")
         command_order = getattr(func, "order")
         command_index = getattr(func, "index")
-        command_arguments = []
-        
+        command_arguments = []        
         for param_name, param in inspect.signature(func).parameters.items():
             if param_name == "self":
                 continue
@@ -299,7 +298,11 @@ class CommandsManager:
         if command_args_errors:
             return -1
         # invoke
-        return command_to_execute.func(**command_args_dict)
+        if not command_to_execute.instance is None:
+            func_bounded = types.MethodType(command_to_execute.func, command_to_execute.instance)
+            return func_bounded(**command_args_dict)
+        else:
+            return command_to_execute.func(**command_args_dict)
 
         
 
