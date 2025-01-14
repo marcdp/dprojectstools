@@ -79,7 +79,7 @@ class SecretsManager():
     
     
     # commands
-    @command("List secrets", index = 90)
+    @command("List secrets", index = 85)
     def secrets_list(self):
         for key in self.keys():
             print("{0}: {1}".format(key, self.get(key)))
