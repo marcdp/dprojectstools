@@ -1,3 +1,4 @@
 # xmenu/__init__.py
-from .commands import command, example, CommandsManager
+from .commands import command, Argument, Flag, CommandsManager
+
 

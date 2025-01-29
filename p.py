@@ -2,6 +2,7 @@
 from dprojectstools.commands import command, CommandsManager
 from dprojectstools.secrets import SecretsManager
 from dprojectstools.git import GitManager
+from dprojectstools.editor import Editor
 import subprocess
 import sys
 import os
@@ -39,6 +40,12 @@ def package_build_and_publish():
     myenv["TWINE_PASSWORD"] = secrets.get("PYPI_AUTH_TOKEN")
     subprocess.run("py -m twine upload dist/*", env = myenv)
 
+@command("Edit license", index = 20)
+def edit():
+    #editor = Editor()
+    #editor.editFile("LICENSE")
+    editor = Editor()
+    editor.editText("hello world\nhow are you")
 
 # execute
 commandsManager = CommandsManager()

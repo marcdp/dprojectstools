@@ -2,20 +2,15 @@ import inspect
 import types
 from typing import List, get_type_hints
 from dataclasses import dataclass
+from ..console import Sequences
+from .. import clipboard
+
 
 # global vars
 order = 0
-SEQUENCE_COLOR_RED = "\033[31m"
-SEQUENCE_COLOR_GREEN = "\033[32m"
-SEQUENCE_COLOR_GREEN_DARK = "\033[2;32m"
-SEQUENCE_COLOR_GRAY_LIGHT = "\033[38;5;250m"
-SEQUENCE_COLOR_GRAY_MEDIUM = "\033[38;5;244m"
-SEQUENCE_COLOR_GRAY_DARK = "\033[38;5;238m"
-SEQUENCE_RESET = "\033[0m"
- 
 
-# decorator (las funciones con este decorator, se catalogaran en el CommandsManager)
-def command(title: str, index: int = 0):
+# decorator 
+def command(title: str, index: int = 0, alias: list[str] = None, examples: list[str] = None):
     def decorator(func):
         global order
         order += 1
@@ -23,16 +18,24 @@ def command(title: str, index: int = 0):
         setattr(func, "title", title) 
         setattr(func, "order", order) 
         setattr(func, "index", index) 
+        setattr(func, "alias", alias) 
+        setattr(func, "examples", examples) 
         return func
     return decorator
 
+# Argument
+class Argument:
+    def __init__(self, title: str = "", subtitle: str = ""):
+        self.title = title
+        self.subtitle = subtitle
 
-# decorator
-def example(example: str):
-    def decorator(func):
-        setattr(func, "example", example) 
-        return func
-    return decorator
+# Flag
+class Flag:
+    def __init__(self, char: chr, title: str = "", subtitle: str = ""):
+        self.chr = char
+        self.title = title
+        self.subtitle = subtitle
+
 
 
 # data classes
@@ -40,36 +43,58 @@ def example(example: str):
 class CommandArgument:
     name: str
     title: str
+    subtitle:str
     required: bool
     type: str
     default: any
+
+@dataclass
+class CommandFlag:
+    name: str
+    title: str
+    subtitle: str
+    required: bool
+    type: str
+    default: any
+    char: chr
 
 # data classes
 @dataclass
 class Command:
     name: List[str]
+    alias: List[str]
+    examples: List[str]
     title: str
     arguments: List[CommandArgument]
+    flags: List[CommandFlag]
     instance: object
     func: any
     order:int
+    registerOrder:int
     index: int
 
+# data classes
+@dataclass
+class ReplHistoryLine:
+    line: str
+    result: str
 
 # Manager
 class CommandsManager:
 
-    def __init__(self, title="", indent = 0):
+    def __init__(self, title=None, indent = 0):
         # ctor
         self._title = title
         self._indent = indent
         self._name = ""
         self._argv = []
         self._commands = []
+        self._registerOrder = 0
         self.exitCode = 0
 
     # methods
-    def register(self, instance=None, prefix = ""):
+    def register(self, instance = None, prefix: str = ""):
+        # register main decorated functions or decorated function from instance
         if instance is None:
             for name, obj in inspect.getmembers(__import__('__main__')):
                 if inspect.isfunction(obj) and name.startswith(prefix) and hasattr(obj, "title"):
@@ -78,45 +103,96 @@ class CommandsManager:
             for name, obj in inspect.getmembers(type(instance), predicate=inspect.isfunction):
                 if inspect.isfunction(obj) and name.startswith(prefix) and hasattr(obj, "title"):
                     self.registerFunction(instance, obj, prefix)
+        self._registerOrder += 1
 
-    def registerFunction(self, instance, func, prefix = ""):
-        # carga los Commands partiendo de las funciones cargadas en memoria, que empiezan con un determinado prefijo
+    def registerFunction(self, instance, func, prefix: str = ""):
+        # create a command fron function
         func_name = func.__name__
         command_name = func_name[len(prefix):].split("_")
         command_title = getattr(func, "title")
         command_order = getattr(func, "order")
         command_index = getattr(func, "index")
+        command_alias = getattr(func, "alias")
+        command_examples = getattr(func, "examples")
+        command_registerOrder = self._registerOrder
+        # arguments
         command_arguments = []        
         for param_name, param in inspect.signature(func).parameters.items():
+            # filter
             if param_name == "self":
                 continue
-            # argument name
-            command_argument_name = param_name
-            # argument title
-            command_argument_title = ""
+            elif hasattr(param.annotation, "__metadata__"):
+                metadata = param.annotation.__metadata__[0]
+                if isinstance(metadata, Flag):
+                    continue
+            # name
+            argument_name = param_name
+            # title
+            argument_title = ""
+            argument_subtitle = ""
             if hasattr(param.annotation, "__metadata__"):
-                command_argument_title = param.annotation.__metadata__[0]
-            # argument title
-            command_argument_required = (param.default == inspect.Parameter.empty)
-            # argument type
-            command_argument_type = ""
+                metadata = param.annotation.__metadata__[0]
+                argument_title = metadata.title
+                argument_subtitle = metadata.subtitle
+            # required
+            argument_required = (param.default == inspect.Parameter.empty)
+            #  type
+            argument_type = ""
             if hasattr(param.annotation, "__metadata__"):
-                command_argument_type = param.annotation.__origin__.__name__
+                argument_type = param.annotation.__origin__.__name__
             # argument default
-            command_argument_default = None
+            argument_default = None
             if param.default != inspect.Parameter.empty:
-                command_argument_default = param.default
+                argument_default = param.default
             # crea CommandArgument
-            command_argument = CommandArgument(command_argument_name, command_argument_title, command_argument_required, command_argument_type, command_argument_default)
-            command_arguments.append(command_argument)
+            argument = CommandArgument(argument_name, argument_title, argument_subtitle, argument_required, argument_type, argument_default)
+            command_arguments.append(argument)
+        # flags
+        command_flags = []        
+        for param_name, param in inspect.signature(func).parameters.items():
+            # filter
+            if param_name == "self":
+                continue
+            elif hasattr(param.annotation, "__metadata__"):
+                metadata = param.annotation.__metadata__[0]
+                if not isinstance(metadata, Flag):
+                    continue
+            # name
+            flag_name = param_name                
+            # title
+            flag_title = ""
+            flag_subtitle = ""
+            if hasattr(param.annotation, "__metadata__"):
+                metadata = param.annotation.__metadata__[0]
+                flag_title = metadata.title
+                flag_subtitle = metadata.subtitle
+            # char
+            flag_char = ""
+            if hasattr(param.annotation, "__metadata__"):
+                metadata = param.annotation.__metadata__[0]
+                flag_char = metadata.chr
+            # required
+            flag_required = (param.default == inspect.Parameter.empty)
+            #  type
+            flag_type = ""
+            if hasattr(param.annotation, "__metadata__"):
+                flag_type = param.annotation.__origin__.__name__
+            # argument default
+            flag_default = None
+            if param.default != inspect.Parameter.empty:
+                flag_default = param.default
+            # crea CommandFlag
+            flag = CommandFlag(flag_name, flag_title, flag_subtitle, flag_required, flag_type, flag_default, flag_char)
+            command_flags.append(flag)
+            
         # crea Comand
-        command = Command(name=command_name, title=command_title, arguments=command_arguments, instance=instance, func=func, order=command_order, index=command_index)
+        command = Command(name=command_name, title=command_title, examples=command_examples, arguments=command_arguments, flags= command_flags, instance=instance, func=func, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=command_alias)
         # añade a la lista de Commands
         self._commands.append(command)
 
     def sort(self):
         # ordena los commands por order de declaracion de la funcion
-        self._commands.sort(key=lambda x: x.order)
+        self._commands.sort(key=lambda x: (x.registerOrder, x.order))
 
         # asigna indices
         command_ant = None
@@ -133,7 +209,7 @@ class CommandsManager:
     
         self._commands.sort(key=lambda x: x.index)
 
-    def showMenu(self):
+    def executeMenu(self):
         # sort
         self.sort()
         # title
@@ -150,7 +226,7 @@ class CommandsManager:
             for command in self._commands:
                 if command_ant == None and command.index > 1:
                     print(indent + f"   : ")
-                if command_ant != None and command_ant.name[0] != command.name[0]:
+                if command_ant != None and (command_ant.name[0] != command.name[0] or command_ant.index < command.index - 1):
                     print(indent + f"   : ")
                 print(indent + f"{command.index:2} : {command.title}")
                 command_ant = command
@@ -158,7 +234,12 @@ class CommandsManager:
             # read option
             command_to_execute = None
             while command_to_execute == None:
-                opcion = input(f" ? : ")
+                opcion = ""
+                try:
+                    opcion = input(f" ? : ")
+                except KeyboardInterrupt:
+                    print("^C")
+                    return
                 if opcion == "":
                     return 0
                 try:
@@ -170,90 +251,284 @@ class CommandsManager:
                 except:
                     pass
                 if command_to_execute == None:
-                    print(indent + f"{SEQUENCE_COLOR_RED}     índice no válido: {opcion}{SEQUENCE_RESET}")
-            # prepara argumentos
+                    print(indent + f"{Sequences.FG_RED}     index not valid: {opcion}{Sequences.RESET}")
+            # prepare args
             print()
             exec_args = {}
             errors = False
             if len(command_to_execute.arguments) > 0:
-                for argument in command_to_execute.arguments:
-                    argument_attributes = []
-                    if argument.default != None:
-                        argument_attributes.append(f"default es '{argument.default}'")
-                    if argument.required:
-                        argument_attributes.append(f"*")
-                    argument_value = input(f"     {argument.title}{"" if len(argument_attributes) == 0 else f" ({" ".join(argument_attributes)})"}: ").strip()
-                    # valor por defecto
-                    if not argument_value and argument.default != None:
-                        argument_value = argument.default
-                    # valida si es requerido
-                    if argument.required:
-                        if argument_value == "":
-                            print(indent + f"{SEQUENCE_COLOR_RED}     Error: argumento requerido: '{argument.title}'{SEQUENCE_RESET}")
+                for definition in command_to_execute.arguments + command_to_execute.flags:
+                    attributes = []
+                    if definition.default != None:
+                        attributes.append(f"default is '{definition.default}'")
+                    if definition.required:
+                        attributes.append(f"*")
+                    value = ""
+                    try:
+                        value = input(f"     {definition.title}{"" if len(attributes) == 0 else f" ({" ".join(attributes)})"}: ").strip()
+                    except KeyboardInterrupt:
+                        print("^C")
+                        errors = True
+                        break
+                    # value by default
+                    if not value and definition.default != None:
+                        value = definition.default
+                    # validates
+                    if definition.required:
+                        if value == "":
+                            print(indent + f"{Sequences.FG_RED}     Error: argument required: '{definition.title}'{Sequences.RESET}")
                             errors = True
                             break
-                    # convierte el tipo
+                    # converts
                     try:
-                        if argument.type == "int":
-                            argument_value = int(argument_value)
-                        elif argument.type == "float":
-                            argument_value = float(argument_value)
-                        elif argument.type == "List":
-                            argument_value = argument_value.split(",")
+                        if definition.type == "int":
+                            value = int(value)
+                        elif definition.type == "float":
+                            value = float(value)
+                        elif definition.type == "bool":
+                            value = bool(value)
+                        elif definition.type == "List":
+                            value = value.split(",")
                     except:
-                        print(indent + f"{SEQUENCE_COLOR_RED}     Error: el argumento '{argument.name}' no se ha podido convertir al tipo '{argument.type}': {argument_value}{SEQUENCE_RESET}")
+                        print(indent + f"{Sequences.FG_RED}     Error: unable to convert argument '{definition.name}' to '{definition.type}': {value}{Sequences.RESET}")
                         errors = True
                         break
                     # set
-                    exec_args[argument.name] = argument_value; 
+                    exec_args[definition.name] = value; 
             # exec
             if not errors:
+                # set gray
+                print(exec_args)
+                print(f"{Sequences.FG_BRIGHT_BLACK}", end = "", flush = True)
                 # invoke
-                if not command_to_execute.instance is None:
-                    func_bounded = types.MethodType(command_to_execute.func, command_to_execute.instance)
-                    result = func_bounded(**exec_args)
-                else:
-                    result = command_to_execute.func(**exec_args)
+                try:
+                    if not command_to_execute.instance is None:
+                        func_bounded = types.MethodType(command_to_execute.func, command_to_execute.instance)
+                        result = func_bounded(**exec_args)
+                    else:
+                        result = command_to_execute.func(**exec_args)
+                finally:
+                    # reset
+                    print(Sequences.RESET, end= "", flush= True)
             # empty line
             print()
-    
-    def showHelp(self):
-        print(f"usage: {self._name} [<command> [<args>]]")
-        print("")
-        print("Commands:")
-        for command in self._commands:
-            line = "  "
-            line += "Adasd"
-            args = []
+
+    def executeRepl(self, handler, prompt = "? "):
+        # repl
+        history = []
+        while True:
+            # read input
+            line = ""
+            try:
+                line = input(Sequences.FG_GREEN + prompt + Sequences.RESET).strip()
+            except KeyboardInterrupt:
+                print("^C")
+                return
+            # empty line
+            if line == "":
+                continue
+            # command
+            if line.startswith("."):
+                line = line[1:]
+                if line.lower() == "quit":
+                    break
+                elif line.lower() == "history":
+                    for historyItem in history:
+                        print(f"{historyItem.line}: {historyItem.result}")
+                elif line.lower() == "help":
+                    print(f"  .help")
+                    print(f"  .history")
+                    print(f"  .quit")
+                    if len(self._commands) > 0:
+                        print(f"  ---")
+                        for command in self._commands:
+                            args= []
+                            for argument in command.arguments:
+                                args.append(f"--{argument.name}")
+                                args.append(f"{Sequences.FG_BRIGHT_BLACK}<{argument.name if argument.title == "" else argument.title}>{Sequences.RESET}")
+                            print(f"  .{" ".join(command.name):10} {" ".join(args)} {Sequences.FG_BRIGHT_BLACK}# {command.title}{Sequences.RESET}")
+                else:
+                    command = line.split()
+                    command.insert(0, "")
+                    self.execute(command)
+                continue
+            # set gray
+            print(f"{Sequences.FG_BRIGHT_BLACK}", end = "", flush = True)
+            # eval
+            try:
+                result = handler(line, history)
+            except Exception as e:
+                print(f"{Sequences.FG_RED}Error: {e}{Sequences.RESET}") 
+                continue
+            finally:
+                print(Sequences.RESET, end= "", flush= True)
+            # add to historic
+            history.append(ReplHistoryLine(line=line, result=str(result)))
+            # print result
+            print(result) 
+            # copy to clip board
+            clipboard.copy(result)
+
+    def executeHelp(self, name):
+        # help
+        indent_subcommands = 10
+        indent_flags = 25
+        indent_arguments = 25
+        command = None
+        commands = list(self._commands)
+        commands.sort(key=lambda x: x.name)
+        subcommands = []
+        if name==[]:
+            for aux in self._commands:
+                if len(aux.name)==1:
+                    subcommands.append(aux)
+        else:
+            for aux in self._commands:
+                if aux.name == name:
+                    command = aux
+                elif aux.name[:len(name)] == name:
+                    subcommands.append(aux)
+        # error
+        if name != []:
+            if command == None:
+                print(f"{self._name}: '{' '.join(name)}' is not a command. See '{self._name} --help'.")
+                print()
+                return -1
+            
+        # usage
+        usage = f"Usage: {self._name} {' '.join(name)}" 
+        if len(subcommands)>0:
+            usage += " COMMAND"
+        for argument in command.arguments:
+            usage += " "    
+            if not argument.required:
+                usage +="["    
+            usage += argument.name
+            if not argument.required:
+                usage +="]"    
+        print()
+        print(usage)
+        print()
+
+        # title
+        if command == None:
+            if self._title != None:
+                print(self._title)
+                print()
+        else:
+            print(command.title)
+            print()
+
+        # subcommands
+        if len(subcommands) > 0:
+            print("Commands:")
+            for subcommand in subcommands:
+                subcommand_name = subcommand.alias if subcommand.alias!=None else subcommand.name
+                print(f"  {' '.join(subcommand_name).ljust(indent_subcommands)} {subcommand.title}")
+            print()
+
+        # arguments
+        if len(command.arguments) > 0 :
+            print("Arguments:")
             for argument in command.arguments:
-                args.append(f"--{argument.name}")
-                args.append(f"{SEQUENCE_COLOR_GRAY_MEDIUM}<{argument.title}>{SEQUENCE_RESET}")
-            print(f"  {" ".join(command.name):10} {" ".join(args)} {SEQUENCE_COLOR_GREEN_DARK}# {command.title}{SEQUENCE_RESET}")
-             
-    def execute(self, argv):
+                line = "  "
+                if not argument.required:
+                    line += "["    
+                line += argument.name
+                if not argument.required:
+                    line +="]"    
+                # metadata
+                metadata = []
+                metadata.append(argument.type)
+                if argument.required:
+                    metadata.append("required")
+                else:
+                    metadata.append("optional")
+                    metadata.append(f"default:{argument.default}")
+                line2 = f"{argument.title}"
+                line2 += " (" + ", ".join(metadata) + ")"
+                # print
+                print(f"{line.ljust(indent_arguments)} {line2}")
+            print()
+
+        # options
+        if command != None:
+            if len(command.flags) > 0:
+                print("Options:")
+                for flag in command.flags:
+                    # flag names
+                    flag_names = [f"-{flag.char}", f"--{flag.name}"]
+                    line = f"  {', '.join(flag_names)} " 
+                    # placeholder
+                    if flag.type != "bool":
+                        line += f"<{flag.subtitle or flag.name}>"
+                    # metadata
+                    metadata = []
+                    metadata.append(flag.type)
+                    if flag.required:
+                        metadata.append("required")
+                    else:
+                        metadata.append("optional")
+                        metadata.append(f"default:{flag.default}")
+                    # print
+                    line2 = f"{flag.title}"
+                    line2 += " (" + ", ".join(metadata) + ")"
+                    if len(line) > indent_flags:
+                        print(line)
+                        print(" "*indent_flags + f"{line2}")
+                    else:
+                        print(f"{line.ljust(indent_flags)} {line2}")
+                print()
+        # examples
+        if command != None:
+            if command.examples != None and len(command.examples) > 0:
+                print("Examples:")
+                for example in command.examples:
+                    print(f"  {example}")
+                    print()
+        # footer
+        if len(name) == 0:
+            print(f"Run '{self._name} COMMAND --help' for more information on a command.")
+            print()
+
+    def execute(self, argv = None, repl = None):
         # init 
-        self._name = argv[0]
-        self._argv = argv
+        if argv == None:
+            argv = []
+        if len(argv) > 0:
+            self._name = argv[0]
+            self._argv = argv
+        else:
+            self._name = ""
+            self._argv = []
         # ejecuta el comando que toque, segun self._argv
-        if len(self._argv)==1:
-            self.showMenu()
-            return
-        if len(self._argv)==2 and (self._argv[1] == "--help" or self._argv[1] == "-h"):
-            self.showHelp()
-            return
+        if "--help" in self._argv or "-h" in self._argv:
+            command = self._argv[1:]
+            if "--help" in command:
+                command.remove("--help")
+            if "-h" in command:
+                command.remove("-h")
+            return self.executeHelp(command)
+        if repl != None and len(self._argv)==1:
+            return self.executeRepl(repl)
+        if repl == None and len(self._argv)==1:
+            return self.executeMenu()
         # busca el commando a ejecutar
         command_to_execute = None
         for command in self._commands:
-            if len(command.name) <= len(argv) - 1:
-                if command.name == argv[1:len(command.name)+1]:
+            command_name = command.alias if command.alias else command.name
+            if len(command_name) <= len(argv) - 1:
+                if command_name == argv[1:len(command_name)+1]:
                     command_to_execute = command
                     break
             if command_to_execute:
                 break
         # si no se ha encontrado, muestra el mesnaje de error
         if command_to_execute == None:
-            print(f"error: no se ha encontrado el comando")
+            print(f"error: command not found")
             return -1
+        
+        
         # ejecuta el comando
         command_args = argv[len(command_to_execute.name)+1:]
         command_args_dict = {}
@@ -266,7 +541,7 @@ class CommandsManager:
         # valida que no sobre ningun argumento 
         for key in command_args_dict.keys():
             if not key in [argument.name for argument in command_to_execute.arguments]:
-                print(f"error: argumento inválido: --{key}")
+                print(f"error: argument not valid: --{key}")
                 command_args_errors = True
         # aañade defaults
         for argument in command.arguments:
@@ -276,7 +551,7 @@ class CommandsManager:
         # valida que no falte ningun argumento
         for argument in command.arguments:
             if not argument.name in command_args_dict:
-                print(f"error: argumento obligatorio: --{argument.name}")
+                print(f"error: argument required: --{argument.name}")
                 command_args_errors = True
         # valida que el tipo de argumentos sea correcto
         if not command_args_errors:
@@ -287,13 +562,16 @@ class CommandsManager:
                         argument_value = int(argument_value)
                     elif argument.type == "float":
                         argument_value = float(argument_value)
+                    elif argument.type == "bool":
+                        argument_value = bool(argument_value)
                     elif argument.type == "List":
                         argument_value = argument_value.split(",")
                     command_args_dict[argument.name] = argument_value
                 except:
-                    print(f"{SEQUENCE_COLOR_RED}error: el argumento '{argument.name}' no se ha podido convertir al tipo '{argument.type}': {argument_value}{SEQUENCE_RESET}")
+                    print(f"{Sequences.FG_RED}error: unable to convert argument '{argument.name}' to '{argument.type}': {argument_value}{Sequences.RESET}")
                     command_args_errors = True
                     break
+
         # si hay errores
         if command_args_errors:
             return -1

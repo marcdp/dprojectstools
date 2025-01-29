@@ -5,9 +5,11 @@ import keyring
 from typing import Annotated
 from ..commands import command, CommandsManager
 from ..crypto import aes_decrypt, aes_encrypt, password_generate
+from .. import PATH_DPROJECTSTOOLS
 
 # consts
 KEYRING_APP = "dprojectstools"
+PATH_DPROJECTSTOOLS_SECRETS = PATH_DPROJECTSTOOLS / "secrets"
 
 # class
 class SecretsManager():
@@ -21,7 +23,7 @@ class SecretsManager():
 
     # ctr
     def __init__(self, name, password = "keyring:"):
-        folder = Path(os.path.join(Path.home(), ".secrets"))
+        folder = PATH_DPROJECTSTOOLS_SECRETS
         folder.mkdir(parents=True, exist_ok=True)
         self._path = Path(folder, name + ".json")
         if not password == "":
