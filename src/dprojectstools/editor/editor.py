@@ -2,12 +2,14 @@ from ..console import Sequences, Keys, readKey
 from ..clipboard import copy
 import sys
 import os
+import time
 
 # CLI tool
-# quit
-# save
-# load
+# show help 
 # undo + redo
+# validate json before save
+# validate xml before save
+# aes encription/description
 
 # constants
 TAB_SPACES = 4
@@ -18,7 +20,6 @@ class Editor:
     # ctor
     def __init__(self) -> None:
         # init
-
         self._stdout = sys.stdout
         self._filename = ""
         self._cols , self._rows = os.get_terminal_size()
@@ -40,13 +41,32 @@ class Editor:
 
     # methods
     def editFile(self, filename: str):
-        self.load(filename)
-        self._loop()
+        # buffer alternate
+        self._stdout.write(Sequences.BUFFER_ALTERNATE)
+        # load
+        try:
+            #load
+            self.load(filename)
+            # loop
+            self._loop()
+        finally:
+            # buffer alternate
+            self._stdout.write(Sequences.BUFFER_MAIN)
 
     def editText(self, text:str):
-        self._newline = self.autodetect_newline(text)
-        self._lines = [line.strip for line in text.splitlines()]
-        self._loop()
+        # buffer alternate
+        self._stdout.write(Sequences.BUFFER_ALTERNATE)
+        # load
+        try:
+            self._newline = self.autodetect_newline(text)
+            self._lines = [line.rstrip(self._newline) for line in text.splitlines()]
+            self._loop()
+            # loop
+            self._loop()
+        finally:
+            # buffer alternate
+            self._stdout.write(Sequences.BUFFER_MAIN)
+        
 
     # keys
     def down(self, select = False):
@@ -527,17 +547,27 @@ class Editor:
 
     def load(self, filename):
         # load
-        with open(filename,"r") as file:
-            text = file.read()
-            self._newline = self.autodetect_newline(text)
-            self._lines = [line.strip() for line in text.splitlines()]
+        self._lines = [""]
+        self._newline = os.linesep
+        if os.path.exists(filename):
+            with open(filename,"r") as file:
+                text = file.read()
+                self._newline = self.autodetect_newline(text)
+                self._lines = [line.rstrip(self._newline) for line in text.splitlines()]
         self._filename = filename
+        self._dirty = False
+        self._setOffset(0,0)
         self._setCursor(0, 0)
         self._printAll()
         
     def save(self):
         # save CTRL+S
         if self._filename != None:
+            if self._filename == "":
+                aux = self._question("Enter file name:")
+                if aux == None:
+                    return
+                self._filename = aux
             with open(self._filename,"w") as file:
                 file.writelines([line + '\n' for line in self._lines])
             self._dirty = False
@@ -545,6 +575,14 @@ class Editor:
 
     def quit(self):
         # exit
+        if self._dirty:
+            result = self._question("Save changes? [Y/n]")
+            if result == "" or result == "y" or result == "Y":
+                self.save()
+            elif result == "n" or result == "N":
+                pass
+            elif result == None:
+                return
         self._stop = True
 
     # utils
@@ -613,8 +651,7 @@ class Editor:
 
     def _printAll(self):
         self._printHeader(flush = False)
-        self._printLines(flush = False)
-        self._printCursor()
+        self._printLines(flush = False)        
         
     def _printHeader(self, flush = True):
         filename = ""
@@ -706,9 +743,26 @@ class Editor:
                 line = line[:len(line) - 1]
             # write line
             self._stdout.write(line)
+        self._printCursor(flush = False)
         self._stdout.write(Sequences.CURSOR_SHOW)
         if flush:
             self._stdout.flush()
+
+    def _question(self, message: str) -> str:
+        self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
+        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, self._rows))
+        self._stdout.write(" " * self._cols)
+
+        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, self._rows))
+        self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
+        result = None
+        try:
+            result = input(message + " ")
+        except KeyboardInterrupt:
+            result = None
+        self._stdout.write(Sequences.RESET)
+        self._printAll()
+        return result
 
     def _colorizeLine(self, line, index):
         if self._select_x != None:
@@ -755,19 +809,19 @@ class Editor:
 
     # loop                
     def _loop(self):
-        # buffer alternate
-        self._stdout.write(Sequences.BUFFER_ALTERNATE)
         # clear
         self._clear()
         # set cursor style
         self._stdout.write(Sequences.CURSOR_SHAPE_BLINKING_BLOCK)
         # prepare
-        self._printHeader()
-        self._printLines()
-        self._printCursor()
+        self._printAll()
+        # to avoid mislocation of cursor at startup
+        time.sleep(.5)
+        # loop
         while not self._stop:
             # read key
             key = readKey()
+            
 
             # check for size changed
             current_size = os.get_terminal_size()            
@@ -869,9 +923,5 @@ class Editor:
             # keypress
             else:
                 self.keypress(key)
-
-        # buffer alternate
-        self._stdout.write(Sequences.BUFFER_MAIN)
-        self._stdout.flush()
 
 

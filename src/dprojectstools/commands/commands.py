@@ -1,10 +1,20 @@
 import inspect
 import types
+import os
+import sys
 from typing import List, get_type_hints
 from dataclasses import dataclass
 from ..console import Sequences
 from .. import clipboard
 
+
+# default command
+# multi flag values List like: --para 123 --param 222 --param 5444
+# flag boolean with negation: --no-flag
+# flags with --flag=value --> split in --flag value
+# password prompt
+# confirm option
+# default value from envvar
 
 # global vars
 order = 0
@@ -14,7 +24,6 @@ def command(title: str, index: int = 0, alias: list[str] = None, examples: list[
     def decorator(func):
         global order
         order += 1
-        aux = func.__name__ .split("_")
         setattr(func, "title", title) 
         setattr(func, "order", order) 
         setattr(func, "index", index) 
@@ -58,7 +67,6 @@ class CommandFlag:
     default: any
     char: chr
 
-# data classes
 @dataclass
 class Command:
     name: List[str]
@@ -79,7 +87,8 @@ class ReplHistoryLine:
     line: str
     result: str
 
-# Manager
+
+# class
 class CommandsManager:
 
     def __init__(self, title=None, indent = 0):
@@ -137,7 +146,7 @@ class CommandsManager:
             # required
             argument_required = (param.default == inspect.Parameter.empty)
             #  type
-            argument_type = ""
+            argument_type = None
             if hasattr(param.annotation, "__metadata__"):
                 argument_type = param.annotation.__origin__.__name__
             # argument default
@@ -157,6 +166,8 @@ class CommandsManager:
                 metadata = param.annotation.__metadata__[0]
                 if not isinstance(metadata, Flag):
                     continue
+            else:
+                continue
             # name
             flag_name = param_name                
             # title
@@ -174,7 +185,7 @@ class CommandsManager:
             # required
             flag_required = (param.default == inspect.Parameter.empty)
             #  type
-            flag_type = ""
+            flag_type = None
             if hasattr(param.annotation, "__metadata__"):
                 flag_type = param.annotation.__origin__.__name__
             # argument default
@@ -185,19 +196,27 @@ class CommandsManager:
             flag = CommandFlag(flag_name, flag_title, flag_subtitle, flag_required, flag_type, flag_default, flag_char)
             command_flags.append(flag)
             
-        # crea Comand
+        # create Command
         command = Command(name=command_name, title=command_title, examples=command_examples, arguments=command_arguments, flags= command_flags, instance=instance, func=func, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=command_alias)
-        # añade a la lista de Commands
+        # create unexisting "parent" Commands
+        aux_name = []
+        for part_name in command.name[:-1]:
+            aux_name.append(part_name)
+            if not aux_name in [aux_command.name for aux_command in self._commands]:
+                virtual_command = Command(name=aux_name, title="", examples=[], arguments=[], flags=[], instance=None, func=None, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=None)
+                self._commands.append(virtual_command)
+        # add to the list of commands
         self._commands.append(command)
 
     def sort(self):
-        # ordena los commands por order de declaracion de la funcion
+        # sort commands in register order
         self._commands.sort(key=lambda x: (x.registerOrder, x.order))
-
-        # asigna indices
+        # assign order index
         command_ant = None
         index = 0
         for command in self._commands:
+            if command.func == None:
+                continue
             if command.index != 0:
                 index = command.index
             elif command_ant != None and command_ant.name[0] != command.name[0]:
@@ -213,7 +232,7 @@ class CommandsManager:
         # sort
         self.sort()
         # title
-        if not self._title == "":
+        if self._title != None and self._title != "":
             print(self._title)
             print("*********")
         # menu
@@ -224,6 +243,8 @@ class CommandsManager:
             print(indent + "=================")
             command_ant = None
             for command in self._commands:
+                if command.func == None:
+                    continue
                 if command_ant == None and command.index > 1:
                     print(indent + f"   : ")
                 if command_ant != None and (command_ant.name[0] != command.name[0] or command_ant.index < command.index - 1):
@@ -245,7 +266,7 @@ class CommandsManager:
                 try:
                     opcion_index =int(opcion)
                     for command in self._commands:
-                        if command.index == opcion_index:
+                        if command.index == opcion_index and command.func != None:
                             command_to_execute = command
                             break
                 except:
@@ -298,7 +319,7 @@ class CommandsManager:
             # exec
             if not errors:
                 # set gray
-                print(exec_args)
+                # print(exec_args)
                 print(f"{Sequences.FG_BRIGHT_BLACK}", end = "", flush = True)
                 # invoke
                 try:
@@ -369,9 +390,9 @@ class CommandsManager:
             # copy to clip board
             clipboard.copy(result)
 
-    def executeHelp(self, name):
+    def executeHelp(self, name: str, recursive: bool = False):
         # help
-        indent_subcommands = 10
+        indent_subcommands = 25
         indent_flags = 25
         indent_arguments = 25
         command = None
@@ -379,24 +400,38 @@ class CommandsManager:
         commands.sort(key=lambda x: x.name)
         subcommands = []
         if name==[]:
+            # root subcommands
             for aux in self._commands:
-                if len(aux.name)==1:
-                    subcommands.append(aux)
+                if not recursive:
+                    if len(aux.name)==1:
+                        subcommands.append(aux)
+                elif recursive:
+                    if aux.func != None:
+                        subcommands.append(aux)
         else:
+            # subcommands
             for aux in self._commands:
                 if aux.name == name:
                     command = aux
-                elif aux.name[:len(name)] == name:
-                    subcommands.append(aux)
+                elif not recursive:
+                    if aux.name[:len(name)] == name:
+                        subcommands.append(aux)
+                elif recursive:
+                    if aux.name[:len(name)] == name:
+                        if aux.func != None:
+                            subcommands.append(aux)
         # error
         if name != []:
             if command == None:
-                print(f"{self._name}: '{' '.join(name)}' is not a command. See '{self._name} --help'.")
+                print(f"{self._name}: error: '{' '.join(name)}' is not a command. See '{self._name} --help'.")
                 print()
                 return -1
             
         # usage
-        usage = f"Usage: {self._name} {' '.join(name)}" 
+        usage = f"Usage: {self._name}" 
+        if len(name) > 0 and len(self._commands) != 1:
+            usage += f" {' '.join(name)}" 
+        
         if len(subcommands)>0:
             usage += " COMMAND"
         if command != None:
@@ -409,27 +444,32 @@ class CommandsManager:
                     usage +="]"    
         print()
         print(usage)
-        print()
 
         # title
         if command == None:
             if self._title != None:
-                print(self._title)
                 print()
+                print(self._title)
         else:
-            print(command.title)
-            print()
+            if command.title != None and len(command.title) > 0:
+                print()
+                print(command.title)
 
         # subcommands
         if len(subcommands) > 0:
+            print()
             print("Commands:")
             for subcommand in subcommands:
-                subcommand_name = subcommand.alias if subcommand.alias!=None else subcommand.name
+                subcommand_name = subcommand.name
+                if command != None:
+                    subcommand_name = subcommand_name[len(command.name):]
+                if subcommand.alias != None:
+                    subcommand_name = subcommand.alias
                 print(f"  {' '.join(subcommand_name).ljust(indent_subcommands)} {subcommand.title}")
-            print()
-
+            
         # arguments
         if command != None and len(command.arguments) > 0 :
+            print()
             print("Arguments:")
             for argument in command.arguments:
                 line = "  "
@@ -440,7 +480,8 @@ class CommandsManager:
                     line +="]"    
                 # metadata
                 metadata = []
-                metadata.append(argument.type)
+                if argument.type != None:
+                    metadata.append(argument.type)
                 if argument.required:
                     metadata.append("required")
                 else:
@@ -450,11 +491,11 @@ class CommandsManager:
                 line2 += " (" + ", ".join(metadata) + ")"
                 # print
                 print(f"{line.ljust(indent_arguments)} {line2}")
-            print()
 
         # options
         if command != None:
             if len(command.flags) > 0:
+                print()
                 print("Options:")
                 for flag in command.flags:
                     # flag names
@@ -465,12 +506,13 @@ class CommandsManager:
                         line += f"<{flag.subtitle or flag.name}>"
                     # metadata
                     metadata = []
-                    metadata.append(flag.type)
+                    if flag.type != None:
+                        metadata.append(flag.type)
                     if flag.required:
                         metadata.append("required")
                     else:
                         metadata.append("optional")
-                        metadata.append(f"default:{flag.default}")
+                        metadata.append(f"default: {flag.default}")
                     # print
                     line2 = f"{flag.title}"
                     line2 += " (" + ", ".join(metadata) + ")"
@@ -479,58 +521,85 @@ class CommandsManager:
                         print(" "*indent_flags + f"{line2}")
                     else:
                         print(f"{line.ljust(indent_flags)} {line2}")
-                print()
+                
         # examples
         if command != None:
             if command.examples != None and len(command.examples) > 0:
+                print()
                 print("Examples:")
                 for example in command.examples:
                     print(f"  {example}")
-                    print()
         # footer
         if len(name) == 0 and len(subcommands) > 0:
-            print(f"Run '{self._name} COMMAND --help' for more information on a command.")
             print()
+            print(f"Run '{self._name} COMMAND --help' for more information on a command.")
 
     def execute(self, argv = None, repl = None):
         # init 
         if argv == None:
             argv = []
         if len(argv) > 0:
-            self._name = argv[0]
+            self._name = os.path.basename(argv[0])
             self._argv = argv
         else:
             self._name = ""
             self._argv = []
-        # ejecuta el comando que toque, segun self._argv
-        if "--help" in self._argv or "-h" in self._argv:
+
+        # if single command exists, then assume its the main command
+        if len(self._commands) == 1:
+            self._argv = [self._argv[0]] + self._commands[0].name + self._argv[1:]
+
+        # executes the command, by analizing argv
+        if "--help" in self._argv:
             command = self._argv[1:]
-            if "--help" in command:
-                command.remove("--help")
-            if "-h" in command:
-                command.remove("-h")
-            return self.executeHelp(command)
+            command.remove("--help")
+            return self.executeHelp(command, recursive=True)
+        elif "-h" in self._argv:
+            command = self._argv[1:]
+            command.remove("-h")
+            return self.executeHelp(command, recursive=False)        
+        
+        # exec Repl
         if repl != None and len(self._argv)==1:
             return self.executeRepl(repl)
+        
+        # exec Menu
         if repl == None and len(self._argv)==1:
             return self.executeMenu()
-        # busca el commando a ejecutar
+        
+        # exec Command
         command_to_execute = None
-        for command in self._commands:
+        for command in reversed(self._commands):
             command_name = command.alias if command.alias else command.name
-            if len(command_name) <= len(argv) - 1:
-                if command_name == argv[1:len(command_name)+1]:
+            if len(command_name) <= len(self._argv) - 1:
+                if command_name == self._argv[1:len(command_name)+1]:
                     command_to_execute = command
                     break
             if command_to_execute:
                 break
-        # si no se ha encontrado, muestra el mesnaje de error
+
+        # if no command found, show error message
         if command_to_execute == None:
-            print(f"error: command not found")
+            print(f"{self._name}: error: command not found", file=sys.stderr)
             return -1
         
+        # command found, but is virtual (does not have func), show help message
+        if command_to_execute.func == None:
+            command = self._argv[1:]
+            if "--help" in command:
+                command.remove("--help")
+            if "--h" in command:
+                command.remove("--h")
+            command = command[len(command_to_execute.name):]
+            
+            if len(command) == 0: 
+                return self.executeHelp(command_to_execute.name)
+            else:
+                print(f"{self._name}: error: invalid arguments: ", command, file=sys.stderr)
+                return -1
+        
         # read params
-        command_args = argv[len(command_to_execute.name)+1:]
+        command_args = self._argv[len(command_to_execute.name)+1:]
         command_args_dict = {}
         command_args_errors = []
         for flag in command_to_execute.flags:
@@ -592,11 +661,11 @@ class CommandsManager:
                 command_args_errors.append(f"invalid argument: {command_arg}")
         if len(command_args_errors) > 0:
             for error in command_args_errors:
-                print("error:", error)
+                print(f"{self._name}: error:", error, file=sys.stderr)
             return -1
         
         # invoke
-        print(command_args_dict)
+        # print(command_args_dict)
         if not command_to_execute.instance is None:
             func_bounded = types.MethodType(command_to_execute.func, command_to_execute.instance)
             return func_bounded(**command_args_dict)

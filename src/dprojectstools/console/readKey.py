@@ -238,7 +238,7 @@ if os.name == 'nt':
     def readKey():
         byte = msvcrt.getch()
         #byte = msvcrt.getwch()
-        print(byte)
+        #print(byte)
         #return byte
         if byte == b'\x08':
             return filter(Keys.BACKSPACE)
