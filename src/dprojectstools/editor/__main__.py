@@ -10,17 +10,16 @@ def optional():
 #def setup_openvpn_connect():    
 @command("Edit file", 
          examples = [
-             "Example 1",
-             "Example 2",
-             "Example 3"
+             "edit #Edit a new file",
+             "edit path/to/file.txt #Edit  an existing file"
          ])
 def edit(
-        filename: Annotated[str,  Argument("PATH", "xxx")],
-        flag0:    Annotated[str,  Flag('a', "Flag a", "dir")],
+        filename: Annotated[str,  Argument("PATH")] = "",
+        flag0:    Annotated[str,  Flag('a', "Flag a", "dir")] = "",
         flag1:    Annotated[bool, Flag('b', "Flag b")] = False,
         flag2:    Annotated[int,  Flag('c', "Flag c","count")] = 123,
     ):
-    print("AAAAA")
+    print("EPSSSS editing!!")
     #if (len(argv) == 1):
     #    # new file
     #    editor = Editor()
@@ -45,6 +44,18 @@ def edit_bb(
         flag1:    Annotated[bool, Flag('f', "Flag 1")] = False,
     ):
     print("AAAAA")
+
+
+#@command_category("Gitt")
+#def git():
+#    print("SOSMTEHING")
+
+@command("Git something")
+def git_something(
+        filename: Annotated[str,  Argument("path")] = "",
+        flag1:    Annotated[bool, Flag('f', "Flag 1")] = False,
+    ):
+    print("SOSMTEHING")
 
 
 # main

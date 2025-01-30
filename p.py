@@ -32,20 +32,13 @@ def package_build():
     subprocess.run("py -m build")
 
 @command("Package build and publish")
-def package_build_and_publish():
+def package_publish():
     # build
     package_build()
     # publish
     myenv = os.environ.copy()
     myenv["TWINE_PASSWORD"] = secrets.get("PYPI_AUTH_TOKEN")
     subprocess.run("py -m twine upload dist/*", env = myenv)
-
-@command("Edit license", index = 20)
-def edit():
-    #editor = Editor()
-    #editor.editFile("LICENSE")
-    editor = Editor()
-    editor.editText("hello world\nhow are you")
 
 # execute
 commandsManager = CommandsManager()

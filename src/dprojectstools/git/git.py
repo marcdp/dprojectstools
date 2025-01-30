@@ -15,7 +15,7 @@ class GitManager:
     @command("Git commit")
     def git_commit(self):
         message = input("Enter changes: ")
-        return subprocess.run("git commit -a -m \"{0}\"".format(message))
+        return subprocess.run(f"git commit -a -m \"{message}\"")
 
     @command("Git push")
     def git_push(self):

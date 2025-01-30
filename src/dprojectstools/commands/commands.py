@@ -399,13 +399,14 @@ class CommandsManager:
         usage = f"Usage: {self._name} {' '.join(name)}" 
         if len(subcommands)>0:
             usage += " COMMAND"
-        for argument in command.arguments:
-            usage += " "    
-            if not argument.required:
-                usage +="["    
-            usage += argument.name
-            if not argument.required:
-                usage +="]"    
+        if command != None:
+            for argument in command.arguments:
+                usage += " "    
+                if not argument.required:
+                    usage +="["    
+                usage += argument.name
+                if not argument.required:
+                    usage +="]"    
         print()
         print(usage)
         print()
@@ -428,7 +429,7 @@ class CommandsManager:
             print()
 
         # arguments
-        if len(command.arguments) > 0 :
+        if command != None and len(command.arguments) > 0 :
             print("Arguments:")
             for argument in command.arguments:
                 line = "  "
@@ -487,7 +488,7 @@ class CommandsManager:
                     print(f"  {example}")
                     print()
         # footer
-        if len(name) == 0:
+        if len(name) == 0 and len(subcommands) > 0:
             print(f"Run '{self._name} COMMAND --help' for more information on a command.")
             print()
 
@@ -528,54 +529,74 @@ class CommandsManager:
             print(f"error: command not found")
             return -1
         
-        
-        # ejecuta el comando
+        # read params
         command_args = argv[len(command_to_execute.name)+1:]
         command_args_dict = {}
-        command_args_errors = False
-        for i in range(0, len(command_args), 2): 
-            if command_args[i].startswith('--'):
-                key = command_args[i][2:]  
-                value = command_args[i + 1] if i + 1 < len(command_args) else None
-                command_args_dict[key] = value
-        # valida que no sobre ningun argumento 
-        for key in command_args_dict.keys():
-            if not key in [argument.name for argument in command_to_execute.arguments]:
-                print(f"error: argument not valid: --{key}")
-                command_args_errors = True
-        # aañade defaults
-        for argument in command.arguments:
-            if not argument.name in command_args_dict:
-                if argument.default != None:
-                    command_args_dict[argument.name] = argument.default
-        # valida que no falte ningun argumento
-        for argument in command.arguments:
-            if not argument.name in command_args_dict:
-                print(f"error: argument required: --{argument.name}")
-                command_args_errors = True
-        # valida que el tipo de argumentos sea correcto
-        if not command_args_errors:
-            for argument in command.arguments:
-                argument_value = command_args_dict[argument.name]
+        command_args_errors = []
+        for flag in command_to_execute.flags:
+            index = -1
+            if "--" + flag.name in command_args:
+                index = command_args.index("--" + flag.name)
+            elif "-" + flag.char in command_args:
+                index = command_args.index("-" + flag.char)
+            if index == -1:
+                if flag.required:
+                    command_args_errors.append(f"flag missing: -{flag.char}, --{flag.name}")
+                else:
+                    command_args_dict[flag.name] = flag.default
+            elif flag.type == "bool":
+                command_args_dict[flag.name] = True
+                command_args.pop(index)
+            elif index + 1 == len(command_args):
+                command_args_errors.append(f"flag value missing: -{flag.char}, --{flag.name}")
+            else:
+                flag_value = command_args[index + 1]
+                command_args_dict[flag.name] = flag_value
+                command_args.pop(index + 1)
+                command_args.pop(index)
                 try:
-                    if argument.type == "int":
-                        argument_value = int(argument_value)
-                    elif argument.type == "float":
-                        argument_value = float(argument_value)
-                    elif argument.type == "bool":
-                        argument_value = bool(argument_value)
-                    elif argument.type == "List":
-                        argument_value = argument_value.split(",")
-                    command_args_dict[argument.name] = argument_value
+                    if flag.type == "int":
+                        flag_value = int(flag_value)
+                    elif flag.type == "float":
+                        flag_value = float(flag_value)
+                    elif flag.type == "bool":
+                        flag_value = bool(flag_value)
+                    elif flag.type == "List":
+                        flag_value = flag_value.split(",")
                 except:
-                    print(f"{Sequences.FG_RED}error: unable to convert argument '{argument.name}' to '{argument.type}': {argument_value}{Sequences.RESET}")
-                    command_args_errors = True
-                    break
-
-        # si hay errores
-        if command_args_errors:
+                    command_args_errors.append(f"unable to convert flag '-{flag.char}, --{flag.name}' to '{flag.type}': {flag_value}")
+        for argument in command_to_execute.arguments:
+            argument_value = None
+            if len(command_args) == 0:
+                if argument.required:
+                    command_args_errors.append(f"argument expected: '{argument.name}")
+                    continue
+                else:
+                    argument_value  = argument.default
+            else:
+                argument_value = command_args.pop(0)
+            try:
+                if argument.type == "int":
+                    argument_value = int(argument_value)
+                elif argument.type == "float":
+                    argument_value = float(argument_value)
+                elif argument.type == "bool":
+                    argument_value = bool(argument_value)
+                elif argument.type == "List":
+                    argument_value = argument_value.split(",")
+            except:
+                command_args_errors.append(f"unable to convert argument '{argument.name}: {argument_value}")
+            command_args_dict[argument.name] = argument_value
+        if len(command_args) > 0:
+            for command_arg in command_args:
+                command_args_errors.append(f"invalid argument: {command_arg}")
+        if len(command_args_errors) > 0:
+            for error in command_args_errors:
+                print("error:", error)
             return -1
+        
         # invoke
+        print(command_args_dict)
         if not command_to_execute.instance is None:
             func_bounded = types.MethodType(command_to_execute.func, command_to_execute.instance)
             return func_bounded(**command_args_dict)
@@ -583,7 +604,7 @@ class CommandsManager:
             return command_to_execute.func(**command_args_dict)
 
         
-
+    
     
     
 
