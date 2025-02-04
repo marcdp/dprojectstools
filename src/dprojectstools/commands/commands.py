@@ -4,11 +4,11 @@ import os
 import sys
 from typing import List, get_type_hints
 from dataclasses import dataclass
-from ..console import Sequences
+from ..console import Sequences, readKey, Keys
 from .. import clipboard
+import importlib
+import __main__
 
-
-# default command
 # multi flag values List like: --para 123 --param 222 --param 5444
 # flag boolean with negation: --no-flag
 # flags with --flag=value --> split in --flag value
@@ -20,7 +20,7 @@ from .. import clipboard
 order = 0
 
 # decorator 
-def command(title: str, index: int = 0, alias: list[str] = None, examples: list[str] = None):
+def command(title: str = "", index: int = 0, alias: list[str] = None, examples: list[str] = None, confirm: bool = False):
     def decorator(func):
         global order
         order += 1
@@ -29,6 +29,7 @@ def command(title: str, index: int = 0, alias: list[str] = None, examples: list[
         setattr(func, "index", index) 
         setattr(func, "alias", alias) 
         setattr(func, "examples", examples) 
+        setattr(func, "confirm", confirm) 
         return func
     return decorator
 
@@ -40,10 +41,11 @@ class Argument:
 
 # Flag
 class Flag:
-    def __init__(self, char: chr, title: str = "", subtitle: str = ""):
+    def __init__(self, char: chr, title: str = "", subtitle: str = "", alias: str = None):
         self.chr = char
         self.title = title
         self.subtitle = subtitle
+        self.alias = alias
 
 
 
@@ -60,6 +62,7 @@ class CommandArgument:
 @dataclass
 class CommandFlag:
     name: str
+    alias: str
     title: str
     subtitle: str
     required: bool
@@ -80,6 +83,7 @@ class Command:
     order:int
     registerOrder:int
     index: int
+    confirm: bool
 
 # data classes
 @dataclass
@@ -91,9 +95,10 @@ class ReplHistoryLine:
 # class
 class CommandsManager:
 
-    def __init__(self, title=None, indent = 0):
+    def __init__(self, title=None, message = None, indent = 0):
         # ctor
         self._title = title
+        self._message = message
         self._indent = indent
         self._name = ""
         self._argv = []
@@ -102,11 +107,17 @@ class CommandsManager:
         self.exitCode = 0
 
     # methods
-    def register(self, instance = None, prefix: str = ""):
+    def register(self, instance = None, module = None, prefix: str = ""):
         # register main decorated functions or decorated function from instance
-        if instance is None:
-            for name, obj in inspect.getmembers(__import__('__main__')):
-                if inspect.isfunction(obj) and name.startswith(prefix) and hasattr(obj, "title"):
+        if not module is None:
+            # running as tool
+            for name, obj in inspect.getmembers(module, inspect.isfunction):
+                if name.startswith(prefix) and hasattr(obj, "title"):
+                    self.registerFunction(None, obj, prefix)
+
+        elif instance is None:
+            for name, obj in inspect.getmembers(sys.modules.get('__main__'), inspect.isfunction):
+                if name.startswith(prefix) and hasattr(obj, "title"):
                     self.registerFunction(None, obj, prefix)
         else:
             for name, obj in inspect.getmembers(type(instance), predicate=inspect.isfunction):
@@ -123,6 +134,7 @@ class CommandsManager:
         command_index = getattr(func, "index")
         command_alias = getattr(func, "alias")
         command_examples = getattr(func, "examples")
+        command_confirm = getattr(func, "confirm")
         command_registerOrder = self._registerOrder
         # arguments
         command_arguments = []        
@@ -151,7 +163,7 @@ class CommandsManager:
                 argument_type = param.annotation.__origin__.__name__
             # argument default
             argument_default = None
-            if param.default != inspect.Parameter.empty:
+            if param.default != inspect.Parameter.empty and param.default != None:
                 argument_default = param.default
             # crea CommandArgument
             argument = CommandArgument(argument_name, argument_title, argument_subtitle, argument_required, argument_type, argument_default)
@@ -170,6 +182,12 @@ class CommandsManager:
                 continue
             # name
             flag_name = param_name                
+            # alias
+            flag_alias = flag_name.replace("_", "-")
+            if hasattr(param.annotation, "__metadata__"):
+                metadata = param.annotation.__metadata__[0]
+                if metadata.alias != None:
+                    flag_alias = metadata.alias
             # title
             flag_title = ""
             flag_subtitle = ""
@@ -183,27 +201,27 @@ class CommandsManager:
                 metadata = param.annotation.__metadata__[0]
                 flag_char = metadata.chr
             # required
-            flag_required = (param.default == inspect.Parameter.empty)
+            flag_required = (param.default == inspect.Parameter.empty or param.default == None)
             #  type
             flag_type = None
             if hasattr(param.annotation, "__metadata__"):
                 flag_type = param.annotation.__origin__.__name__
             # argument default
             flag_default = None
-            if param.default != inspect.Parameter.empty:
+            if param.default != inspect.Parameter.empty and param.default != None:
                 flag_default = param.default
             # crea CommandFlag
-            flag = CommandFlag(flag_name, flag_title, flag_subtitle, flag_required, flag_type, flag_default, flag_char)
+            flag = CommandFlag(flag_name, flag_alias, flag_title, flag_subtitle, flag_required, flag_type, flag_default, flag_char)
             command_flags.append(flag)
             
         # create Command
-        command = Command(name=command_name, title=command_title, examples=command_examples, arguments=command_arguments, flags= command_flags, instance=instance, func=func, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=command_alias)
+        command = Command(name=command_name, title=command_title, examples=command_examples, arguments=command_arguments, flags= command_flags, instance=instance, func=func, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=command_alias, confirm= command_confirm)
         # create unexisting "parent" Commands
         aux_name = []
         for part_name in command.name[:-1]:
             aux_name.append(part_name)
             if not aux_name in [aux_command.name for aux_command in self._commands]:
-                virtual_command = Command(name=aux_name, title="", examples=[], arguments=[], flags=[], instance=None, func=None, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=None)
+                virtual_command = Command(name=aux_name, title="", examples=[], arguments=[], flags=[], instance=None, func=None, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=None, confirm= False)
                 self._commands.append(virtual_command)
         # add to the list of commands
         self._commands.append(command)
@@ -232,15 +250,21 @@ class CommandsManager:
         # sort
         self.sort()
         # title
-        if self._title != None and self._title != "":
-            print(self._title)
-            print("*********")
+        #if self._title != None and self._title != "":
+        #    print(self._title)
+        #    print("*********")
         # menu
         indent = self._indent * "    "
         while True:
             # show menu
-            print(indent + "Select an option:")
-            print(indent + "=================")
+            title = "Select an option:"
+            if self._title != None:
+                title = self._title
+            print(indent + title)
+            print(indent + ("=" * len(title)))
+            if self._message != None:
+                print("     " + indent + self._message.replace("\n", "     " + indent))
+                print()
             command_ant = None
             for command in self._commands:
                 if command.func == None:
@@ -249,7 +273,7 @@ class CommandsManager:
                     print(indent + f"   : ")
                 if command_ant != None and (command_ant.name[0] != command.name[0] or command_ant.index < command.index - 1):
                     print(indent + f"   : ")
-                print(indent + f"{command.index:2} : {command.title}")
+                print(indent + f"{command.index:2} : {command.title if command.title != "" else ' '.join(command.name)}")
                 command_ant = command
             print(indent + f"   : ")
             # read option
@@ -273,6 +297,22 @@ class CommandsManager:
                     pass
                 if command_to_execute == None:
                     print(indent + f"{Sequences.FG_RED}     index not valid: {opcion}{Sequences.RESET}")
+            # confirm
+            if command_to_execute.confirm:
+                print(f"Are you sure you want to run this command '{command.title if command.title != "" else ' '.join(command.name)}'? (y/n) ", end='', flush=True)
+                key = ""
+                while True:
+                    key = readKey()
+                    key = key.lower()
+                    if key == Keys.CTRL_C:
+                        print("^C")
+                        break
+                    if key == "y" or key == "n":
+                        print(key)
+                        break
+                if key != "y":
+                    print()
+                    continue
             # prepare args
             print()
             exec_args = {}
@@ -392,7 +432,7 @@ class CommandsManager:
 
     def executeHelp(self, name: str, recursive: bool = False):
         # help
-        indent_subcommands = 25
+        indent_subcommands = 15
         indent_flags = 25
         indent_arguments = 25
         command = None
@@ -444,20 +484,20 @@ class CommandsManager:
                     usage +="]"    
         print()
         print(usage)
+        print()
 
         # title
         if command == None:
             if self._title != None:
-                print()
                 print(self._title)
+                print()
         else:
             if command.title != None and len(command.title) > 0:
-                print()
                 print(command.title)
+                print()
 
         # subcommands
         if len(subcommands) > 0:
-            print()
             print("Commands:")
             for subcommand in subcommands:
                 subcommand_name = subcommand.name
@@ -466,10 +506,10 @@ class CommandsManager:
                 if subcommand.alias != None:
                     subcommand_name = subcommand.alias
                 print(f"  {' '.join(subcommand_name).ljust(indent_subcommands)} {subcommand.title}")
+            print()
             
         # arguments
         if command != None and len(command.arguments) > 0 :
-            print()
             print("Arguments:")
             for argument in command.arguments:
                 line = "  "
@@ -491,19 +531,19 @@ class CommandsManager:
                 line2 += " (" + ", ".join(metadata) + ")"
                 # print
                 print(f"{line.ljust(indent_arguments)} {line2}")
+            print()
 
         # options
         if command != None:
             if len(command.flags) > 0:
-                print()
                 print("Options:")
                 for flag in command.flags:
                     # flag names
-                    flag_names = [f"-{flag.char}", f"--{flag.name}"]
+                    flag_names = [f"-{flag.char}", f"--{flag.alias}"]
                     line = f"  {', '.join(flag_names)} " 
                     # placeholder
                     if flag.type != "bool":
-                        line += f"<{flag.subtitle or flag.name}>"
+                        line += f"<{flag.subtitle or flag.alias or flag.name}>"
                     # metadata
                     metadata = []
                     if flag.type != None:
@@ -518,23 +558,23 @@ class CommandsManager:
                     line2 += " (" + ", ".join(metadata) + ")"
                     if len(line) > indent_flags:
                         print(line)
-                        print(" "*indent_flags + f"{line2}")
+                        print(" " + " "*indent_flags + f"{line2}")
                     else:
                         print(f"{line.ljust(indent_flags)} {line2}")
-                
+                print()
         # examples
         if command != None:
             if command.examples != None and len(command.examples) > 0:
-                print()
                 print("Examples:")
                 for example in command.examples:
                     print(f"  {example}")
+                print()
         # footer
         if len(name) == 0 and len(subcommands) > 0:
-            print()
             print(f"Run '{self._name} COMMAND --help' for more information on a command.")
+            print()
 
-    def execute(self, argv = None, repl = None):
+    def execute(self, argv = None, repl = None, default_show_help: bool = False):
         # init 
         if argv == None:
             argv = []
@@ -544,9 +584,9 @@ class CommandsManager:
         else:
             self._name = ""
             self._argv = []
-
+        
         # if single command exists, then assume its the main command
-        if len(self._commands) == 1:
+        if len(self._commands) == 1 :
             self._argv = [self._argv[0]] + self._commands[0].name + self._argv[1:]
 
         # executes the command, by analizing argv
@@ -558,6 +598,8 @@ class CommandsManager:
             command = self._argv[1:]
             command.remove("-h")
             return self.executeHelp(command, recursive=False)        
+        elif len(self._argv) == 1 and default_show_help:
+            return self.executeHelp([], recursive=True)        
         
         # exec Repl
         if repl != None and len(self._argv)==1:
@@ -591,38 +633,67 @@ class CommandsManager:
             if "--h" in command:
                 command.remove("--h")
             command = command[len(command_to_execute.name):]
-            
             if len(command) == 0: 
                 return self.executeHelp(command_to_execute.name)
             else:
                 print(f"{self._name}: error: invalid arguments: ", command, file=sys.stderr)
                 return -1
         
-        # read params
+        # normalize flags, convert "--flag=value" to "--flag value"
+        argv = []
+        for arg in self._argv:
+            if arg.startswith("--") and "=" in arg:
+                argv.append(arg[:arg.index("=")])
+                argv.append(arg[arg.index("=")+1:])
+                pass
+            else:
+                argv.append(arg)
+        self._argv = argv
+
+        # normalize flags, convert "--flag value1 --flag value2 --flag value3" to "--flag value1||||value2||||value3"
+        flag_value_separator = "||||"
+        for flag in command_to_execute.flags:
+            if flag.type == "List":
+                flag_values = []
+                while True:
+                    index = -1
+                    if "--" + flag.alias in self._argv:
+                        index = self._argv.index("--" + flag.alias)
+                    elif "-" + flag.char in self._argv:
+                        index = self._argv.index("-" + flag.char)
+                    if index != -1:
+                        flag_values.append(self._argv[index + 1])
+                        self._argv.pop(index + 1)
+                        self._argv.pop(index)
+                    else:
+                        break
+                if len(flag_values) > 0:
+                    self._argv.append("--" + flag.alias)
+                    self._argv.append(flag_value_separator.join(flag_values))
+        # read flags
         command_args = self._argv[len(command_to_execute.name)+1:]
         command_args_dict = {}
-        command_args_errors = []
+        command_args_errors = []        
         for flag in command_to_execute.flags:
             index = -1
-            if "--" + flag.name in command_args:
-                index = command_args.index("--" + flag.name)
+            if "--" + flag.alias in command_args:
+                index = command_args.index("--" + flag.alias)
             elif "-" + flag.char in command_args:
                 index = command_args.index("-" + flag.char)
             if index == -1:
                 if flag.required:
-                    command_args_errors.append(f"flag missing: -{flag.char}, --{flag.name}")
+                    command_args_errors.append(f"flag missing: -{flag.char}, --{flag.alias}")
                 else:
                     command_args_dict[flag.name] = flag.default
+                    if flag.type == "List" and isinstance(flag.default, str):
+                        command_args_dict[flag.name] = flag.default.split(",")
             elif flag.type == "bool":
                 command_args_dict[flag.name] = True
                 command_args.pop(index)
             elif index + 1 == len(command_args):
-                command_args_errors.append(f"flag value missing: -{flag.char}, --{flag.name}")
+                command_args_errors.append(f"flag value missing: -{flag.char}, --{flag.alias}")
             else:
                 flag_value = command_args[index + 1]
-                command_args_dict[flag.name] = flag_value
-                command_args.pop(index + 1)
-                command_args.pop(index)
                 try:
                     if flag.type == "int":
                         flag_value = int(flag_value)
@@ -631,14 +702,18 @@ class CommandsManager:
                     elif flag.type == "bool":
                         flag_value = bool(flag_value)
                     elif flag.type == "List":
-                        flag_value = flag_value.split(",")
+                        flag_value = flag_value.split(flag_value_separator)
                 except:
-                    command_args_errors.append(f"unable to convert flag '-{flag.char}, --{flag.name}' to '{flag.type}': {flag_value}")
+                    command_args_errors.append(f"unable to convert flag '-{flag.char}, --{flag.alias}' to '{flag.type}': {flag_value}")
+                command_args_dict[flag.name] = flag_value
+                command_args.pop(index + 1)
+                command_args.pop(index)
+        # read arguments
         for argument in command_to_execute.arguments:
             argument_value = None
             if len(command_args) == 0:
                 if argument.required:
-                    command_args_errors.append(f"argument expected: '{argument.name}")
+                    command_args_errors.append(f"argument expected: '{argument.name}'")
                     continue
                 else:
                     argument_value  = argument.default

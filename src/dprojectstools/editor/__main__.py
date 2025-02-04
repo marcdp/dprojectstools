@@ -10,7 +10,15 @@ def edit( filename: Annotated[str,  Argument("PATH")] = ""):
     return editor.editFile(filename)
 
 # main
-if __name__ == "__main__":
+def main():
     commandsManager = CommandsManager()
-    commandsManager.register()
+    commandsManager.register(module = sys.modules[__name__])
     commandsManager.execute(sys.argv)
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+

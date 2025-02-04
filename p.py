@@ -8,18 +8,21 @@ import sys
 import os
 import shutil
 
-# # prepare environment
+# # prepare environment:
 # pip install --upgrade build
 # py -m pip install --upgrade twine
 #
 # # increase version
 # ... manuallly
-#
-# # build
+
+# # build:
 # py -m build
 #
 # # publish package to index
 # py -m twine upload dist/*
+
+# install as development package:
+# pip install -e .
 
 
 # secrets 
@@ -39,6 +42,11 @@ def package_publish():
     myenv = os.environ.copy()
     myenv["TWINE_PASSWORD"] = secrets.get("PYPI_AUTH_TOKEN")
     subprocess.run("py -m twine upload dist/*", env = myenv)
+
+@command("Package install as development pacakge", index = 15)
+def package_install():
+    # install
+    subprocess.run("pip install -e .")
 
 # execute
 commandsManager = CommandsManager()

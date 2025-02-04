@@ -1,15 +1,13 @@
 from ..console import Sequences, Keys, readKey
+from ..crypto import aes_decrypt, aes_encrypt
 from ..clipboard import copy
 import sys
 import os
-import time
+import getpass
+import json
 
-# CLI tool
-# show help 
+# read correctly ESCAPE sequence key in linux
 # undo + redo
-# validate json before save
-# validate xml before save
-# aes encription/description
 
 # constants
 TAB_SPACES = 4
@@ -21,7 +19,7 @@ class Editor:
     def __init__(self) -> None:
         # init
         self._stdout = sys.stdout
-        self._filename = ""
+        self._filename = None
         self._cols , self._rows = os.get_terminal_size()
         self._insert = True
         self._dirty = False
@@ -29,6 +27,10 @@ class Editor:
         self._lines = []
         self._stop = False
         self._newline = os.linesep
+        self._password = None
+        self._format = ""
+        self._use_buffers = True
+        self._result = None
         # cursor
         self._cursor_x = 0
         self._cursor_y = 0
@@ -40,32 +42,60 @@ class Editor:
         self._select_y = None
 
     # methods
-    def editFile(self, filename: str):
-        # buffer alternate
-        self._stdout.write(Sequences.BUFFER_ALTERNATE)
+    def editFile(self, filename: str, password: str = None):
+        # password
+        if password != None:
+            self._password = password
+        elif filename != None and filename.endswith(".aes"):
+            self._password = getpass.getpass(f"Enter password for '{filename}': ")
+        else:
+            self._password = None            
+        # format
+        if filename.endswith(".json.aes") or filename.endswith(".json"):
+            self._format = "json"
+        else:
+            self._format = None
         # load
         try:
-            #load
             self.load(filename)
-            # loop
-            self._loop()
-        finally:
-            # buffer alternate
-            self._stdout.write(Sequences.BUFFER_MAIN)
-
-    def editText(self, text:str):
-        # buffer alternate
-        self._stdout.write(Sequences.BUFFER_ALTERNATE)
-        # load
+        except ValueError as e:
+            print("error: invalid password")
+            return False
+        # loop
         try:
-            self._newline = self.autodetect_newline(text)
-            self._lines = [line.rstrip(self._newline) for line in text.splitlines()]
-            self._loop()
+            # buffer alternate
+            if self._use_buffers:
+                self._stdout.write(Sequences.BUFFER_ALTERNATE)
             # loop
             self._loop()
         finally:
+            # buffer main
+            if self._use_buffers:
+                self._stdout.write(Sequences.BUFFER_MAIN)
+            pass
+        # return
+        return True
+
+    def editText(self, text:str, format:str = ""):
+        # load
+        self._newline = self.autodetect_newline(text)
+        self._lines = [line.rstrip(self._newline) for line in text.splitlines()]
+        self._filename = None
+        self._format = format
+        # loop
+        try:
             # buffer alternate
-            self._stdout.write(Sequences.BUFFER_MAIN)
+            if self._use_buffers:
+                self._stdout.write(Sequences.BUFFER_ALTERNATE)
+            # loop
+            self._loop()
+        finally:
+            # buffer main
+            if self._use_buffers:
+                self._stdout.write(Sequences.BUFFER_MAIN)
+            pass
+        # return
+        return self._result        
         
 
     # keys
@@ -552,38 +582,53 @@ class Editor:
         if os.path.exists(filename):
             with open(filename,"r") as file:
                 text = file.read()
+                # decrypt
+                if self._password != None:
+                    text = aes_decrypt(text, self._password)
+                # split in lines
                 self._newline = self.autodetect_newline(text)
                 self._lines = [line.rstrip(self._newline) for line in text.splitlines()]
         self._filename = filename
         self._dirty = False
-        self._setOffset(0,0)
-        self._setCursor(0, 0)
-        self._printAll()
+        self._offset_x = 0
+        self._offset_y = 0
+        self._cursor_x = 0
+        self._cursor_y = 0
         
     def save(self):
-        # save CTRL+S
-        if self._filename != None:
-            if self._filename == "":
-                aux = self._question("Enter file name:")
-                if aux == None:
-                    return
-                self._filename = aux
+        # validate format
+        if not self._validateFormat():
+            self._show_error(f"Unable to save: text is not a valid {self._format} document")
+            return False
+        # encrypt if required
+        text = self._newline.join(self._lines)
+        if self._password != None:
+            text = aes_encrypt(text, self._password)
+        # save
+        if self._filename == None:
+            self._result = self._newline.join(self._lines)
+        else:
             with open(self._filename,"w") as file:
-                file.writelines([line + '\n' for line in self._lines])
-            self._dirty = False
-            self._printAll()
+                file.write(text)
+        # print
+        self._dirty = False
+        self._printAll()
+        return True
 
     def quit(self):
         # exit
         if self._dirty:
-            result = self._question("Save changes? [Y/n]")
-            if result == "" or result == "y" or result == "Y":
-                self.save()
+            result = self._questionYesNo("Save changes? [Y/n]")
+            if result == "y" or result == "Y":
+                if not self.save():
+                    return False                
             elif result == "n" or result == "N":
-                pass
+                self._result = None
             elif result == None:
-                return
-        self._stop = True
+                return False
+        self._printAll()
+        self._stop = True        
+        return True
 
     # utils
     def _setSelect(self, select: bool):
@@ -652,10 +697,11 @@ class Editor:
     def _printAll(self):
         self._printHeader(flush = False)
         self._printLines(flush = False)        
+        self._printCursor()
         
-    def _printHeader(self, flush = True):
+    def _printHeader(self, flush:bool = True, message: str = None):
         filename = ""
-        if self._filename != "":
+        if self._filename != None:
             filename = self._filename 
         else: 
             filename = "<none>"
@@ -664,6 +710,9 @@ class Editor:
         header1 = f" {filename:} "
         header2 = f" ln {self._cursor_y + 1}, col {self._cursor_x + 1}, lines {len(self._lines)}, Help ^H, {"INS" if self._insert else "OVR"} {self._encoding} {self._newline.replace('\n','LF').replace('\r','CR')} "
         header = header1 + (" " * (self._cols - len(header1) - len(header2) - 1)) + header2  
+        # message
+        if message != None:
+            header = " " + message
         # print
         self._stdout.write(Sequences.CURSOR_HIDE)
         self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1,1))
@@ -750,10 +799,10 @@ class Editor:
 
     def _question(self, message: str) -> str:
         self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
-        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, self._rows))
+        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1))
         self._stdout.write(" " * self._cols)
 
-        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, self._rows))
+        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1))
         self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
         result = None
         try:
@@ -763,6 +812,32 @@ class Editor:
         self._stdout.write(Sequences.RESET)
         self._printAll()
         return result
+
+    def _questionYesNo(self, message: str) -> str:
+        self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
+        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1))
+        self._stdout.write(" " * self._cols)
+        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1))
+        self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
+        result = None
+        print(" " + message + " ", end='', flush=True)
+        key = ""
+        while True:
+            key = readKey()
+            print(key)
+            if key == Keys.CTRL_C:
+                result = None
+                break
+            key = key.lower()
+            if key == "y" or key == "n":
+                result = key
+                break
+        self._stdout.write(Sequences.RESET)
+        self._printAll()
+        return result
+
+    def _show_error(self, message: str) -> str:
+        self._printHeader(message = message + " (press any key to continue)")
 
     def _colorizeLine(self, line, index):
         if self._select_x != None:
@@ -798,14 +873,15 @@ class Editor:
                 pass
         return line
     
-    # test
-    def test(self):
-        while not self._stop:
-            # read key
-            key = readKey()
-            print(key.replace("\x1b", "ESC"))
-            if key == Keys.CTRL_C:
-                break
+    def _validateFormat(self):
+        if self._format == "json":
+            text = self._newline.join(self._lines)
+            try:
+                json.loads(text)
+                return True  
+            except json.JSONDecodeError:
+                return False 
+        return True
 
     # loop                
     def _loop(self):
@@ -815,14 +891,12 @@ class Editor:
         self._stdout.write(Sequences.CURSOR_SHAPE_BLINKING_BLOCK)
         # prepare
         self._printAll()
-        # to avoid mislocation of cursor at startup
-        time.sleep(.5)
+        self._printLine(0)
         # loop
         while not self._stop:
             # read key
             key = readKey()
             
-
             # check for size changed
             current_size = os.get_terminal_size()            
             if self._rows != current_size.lines or self._cols != current_size.columns:

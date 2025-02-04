@@ -2,8 +2,9 @@ from pathlib import Path
 import os
 import json
 import keyring
+import getpass
 from typing import Annotated
-from ..commands import command, CommandsManager
+from ..editor import Editor
 from ..crypto import aes_decrypt, aes_encrypt, password_generate
 from .. import PATH_DPROJECTSTOOLS
 
@@ -22,22 +23,31 @@ class SecretsManager():
     
 
     # ctr
-    def __init__(self, name, password = "keyring:"):
+    def __init__(self, dbname, password = "keyring:", create = False):
         folder = PATH_DPROJECTSTOOLS_SECRETS
         folder.mkdir(parents=True, exist_ok=True)
-        self._path = Path(folder, name + ".json")
-        if not password == "":
-            if password.startswith("keyring:"):
-                username = password[password.index(":") + 1:]
-                if username == "":
-                    username = os.getlogin()
-                password = keyring.get_password(KEYRING_APP, username)
-                if password is None:
-                    password = password_generate()
-                    keyring.set_password(KEYRING_APP, username, password)
-            self._password = password
-            self._path = Path(folder, name + ".json.aes")
+        self._path = Path(folder, dbname + ".json.aes")
+        # validate
+        if os.path.exists(self._path):
+            if create:
+                raise ValueError("Unable to create db: already exists:", dbname)
+        else:
+            if not create:
+                raise ValueError("Unable to open db: db not found:", dbname)
+        # password
+        if password.startswith("keyring:"):
+            username = password[password.index(":") + 1:]
+            if username == "":
+                username = getpass.getuser()
+            password = keyring.get_password(KEYRING_APP, username)
+            if password is None:
+                password = password_generate()
+                keyring.set_password(KEYRING_APP, username, password)
+        self._password = password
         self._load()
+        # save if required
+        if create:
+            self._save()
 
 
     # methods
@@ -61,8 +71,26 @@ class SecretsManager():
         del self._dict[name]
         self._save()
 
+    def edit(self):
+        editor = Editor()
+        text = json.dumps(self._dict, indent=4)
+        result = editor.editText(text, format = "json")
+        if result != None:
+            self._dict = json.loads(result)
+            self._save()
+            return True
+        return False
 
-    # methods
+    # static methods
+    @staticmethod
+    def get_db_names():
+        folder = PATH_DPROJECTSTOOLS_SECRETS
+        folder.mkdir(parents=True, exist_ok=True)
+        files = [entry.name.replace(".json.aes", "") for entry in os.scandir(folder) if entry.is_file()]
+        return files
+
+
+    # private methods
     def _load(self):
         if os.path.isfile(self._path):
             with open(self._path, "r") as file:
@@ -81,31 +109,31 @@ class SecretsManager():
     
     
     # commands
-    @command("List secrets", index = 85)
-    def secrets_list(self):
-        for key in self.keys():
-            print("{0}: {1}".format(key, self.get(key)))
-    @command("Set secret")
-    def secrets_set(self, 
-            name: Annotated[str, "Name"],
-            value: Annotated[str, "Value"]
-        ):
-        self.set(name, value)
-    @command("Get secret")
-    def secrets_get(self, 
-            name: Annotated[str, "Name"]
-        ):
-        value = self.get(name)
-        print(value)
-    @command("Del secret")
-    def secrets_delete(self, 
-            name: Annotated[str, "Name"]
-        ):
-        self.delete(name)
-
-    # methods
-    def exec(self, argv):
-        commandsManager = CommandsManager()
-        commandsManager.register(self)
-        return commandsManager.execute(argv)        
+    #@command("List secrets", index = 85)
+    #def secrets_list(self):
+    #    for key in self.keys():
+    #        print("{0}: {1}".format(key, self.get(key)))
+    #@command("Set secret")
+    #def secrets_set(self, 
+    #        name: Annotated[str, "Name"],
+    #        value: Annotated[str, "Value"]
+    #    ):
+    #    self.set(name, value)
+    #@command("Get secret")
+    #def secrets_get(self, 
+    #        name: Annotated[str, "Name"]
+    #    ):
+    #    value = self.get(name)
+    #    print(value)
+    #@command("Del secret")
+    #def secrets_delete(self, 
+    #        name: Annotated[str, "Name"]
+    #    ):
+    #    self.delete(name)
+    #
+    #    # methods
+    #def exec(self, argv):
+    #    commandsManager = CommandsManager()
+    #    commandsManager.register(self)
+    #    return commandsManager.execute(argv)        
 
