@@ -24,6 +24,14 @@ def edit(
     secrets = SecretsManager(dbname)
     secrets.edit()
 
+@command("Edit secrets dbs")
+def dump(
+        dbname: Annotated[str,  Argument("NAME")] = ""
+    ):
+    secrets = SecretsManager(dbname)
+    json = secrets.to_json()
+    print(json)
+
 
 # main
 def main():

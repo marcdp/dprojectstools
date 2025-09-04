@@ -6,6 +6,7 @@ from typing import List, get_type_hints
 from dataclasses import dataclass
 from ..console import Sequences, readKey, Keys
 from .. import clipboard
+from logging import Logger
 import importlib
 import __main__
 
@@ -84,6 +85,7 @@ class Command:
     registerOrder:int
     index: int
     confirm: bool
+    logger_arg: str
 
 # data classes
 @dataclass
@@ -95,7 +97,7 @@ class ReplHistoryLine:
 # class
 class CommandsManager:
 
-    def __init__(self, title=None, message = None, indent = 0):
+    def __init__(self, title=None, message = None, indent = 0, logger:Logger = None):
         # ctor
         self._title = title
         self._message = message
@@ -104,6 +106,7 @@ class CommandsManager:
         self._argv = []
         self._commands = []
         self._registerOrder = 0
+        self._logger = logger
         self.exitCode = 0
 
     # methods
@@ -120,9 +123,12 @@ class CommandsManager:
                 if name.startswith(prefix) and hasattr(obj, "title"):
                     self.registerFunction(None, obj, prefix)
         else:
-            for name, obj in inspect.getmembers(type(instance), predicate=inspect.isfunction):
-                if inspect.isfunction(obj) and name.startswith(prefix) and hasattr(obj, "title"):
-                    self.registerFunction(instance, obj, prefix)
+            for name, member in type(instance).__dict__.items():
+                if inspect.isfunction(member) and name.startswith(prefix) and hasattr(member, "title"):
+                    self.registerFunction(instance, member, prefix)
+            #for name, obj in inspect.getmembers(type(instance), predicate=inspect.isfunction):
+            #    if inspect.isfunction(obj) and name.startswith(prefix) and hasattr(obj, "title"):
+            #        self.registerFunction(instance, obj, prefix)
         self._registerOrder += 1
 
     def registerFunction(self, instance, func, prefix: str = ""):
@@ -135,10 +141,18 @@ class CommandsManager:
         command_alias = getattr(func, "alias")
         command_examples = getattr(func, "examples")
         command_confirm = getattr(func, "confirm")
+        command_logger_arg = None
         command_registerOrder = self._registerOrder
+        # logger
+        if self._logger != None:
+            self._logger.debug(f"Registering command {command_name}")
         # arguments
         command_arguments = []        
         for param_name, param in inspect.signature(func).parameters.items():
+            # logger
+            if param.annotation is Logger:
+                command_logger_arg = param_name
+                continue
             # filter
             if param_name == "self":
                 continue
@@ -215,14 +229,14 @@ class CommandsManager:
             command_flags.append(flag)
             
         # create Command
-        command = Command(name=command_name, title=command_title, examples=command_examples, arguments=command_arguments, flags= command_flags, instance=instance, func=func, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=command_alias, confirm= command_confirm)
+        command = Command(name=command_name, title=command_title, examples=command_examples, arguments=command_arguments, flags= command_flags, instance=instance, func=func, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=command_alias, confirm=command_confirm, logger_arg=command_logger_arg)
         # create unexisting "parent" Commands
-        aux_name = []
-        for part_name in command.name[:-1]:
-            aux_name.append(part_name)
-            if not aux_name in [aux_command.name for aux_command in self._commands]:
-                virtual_command = Command(name=aux_name, title="", examples=[], arguments=[], flags=[], instance=None, func=None, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=None, confirm= False)
-                self._commands.append(virtual_command)
+        #aux_name = []
+        #for part_name in command.name[:-1]:
+        #    aux_name.append(part_name)
+        #    if not aux_name in [aux_command.name for aux_command in self._commands]:
+        #        virtual_command = Command(name=aux_name, title="", examples=[], arguments=[], flags=[], instance=None, func=None, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=None, confirm= False, logger_arg=command_logger_arg)
+        #        self._commands.append(virtual_command)
         # add to the list of commands
         self._commands.append(command)
 
@@ -317,7 +331,7 @@ class CommandsManager:
             print()
             exec_args = {}
             errors = False
-            if len(command_to_execute.arguments) > 0:
+            if len(command_to_execute.arguments) > 0 or len(command_to_execute.flags) > 0:
                 for definition in command_to_execute.arguments + command_to_execute.flags:
                     attributes = []
                     if definition.default != None:
@@ -361,6 +375,12 @@ class CommandsManager:
                 # set gray
                 # print(exec_args)
                 print(f"{Sequences.FG_BRIGHT_BLACK}", end = "", flush = True)
+                # log
+                if self._logger != None:
+                    self._logger.debug(f"Invoking {command_to_execute.func.__name__}({exec_args}) ...")
+                # logger arg
+                if command_to_execute.logger_arg:
+                    exec_args[command_to_execute.logger_arg] = self._logger
                 # invoke
                 try:
                     if not command_to_execute.instance is None:
@@ -584,7 +604,16 @@ class CommandsManager:
         else:
             self._name = ""
             self._argv = []
-        
+        # create unexisting "parent" Commands
+        if True:
+            # create unexisting "parent" Commands
+            #aux_name = []
+            #for part_name in command.name[:-1]:
+            #    aux_name.append(part_name)
+            #    if not aux_name in [aux_command.name for aux_command in self._commands]:
+            #        virtual_command = Command(name=aux_name, title="", examples=[], arguments=[], flags=[], instance=None, func=None, order=command_order, registerOrder=command_registerOrder, index=command_index, alias=None, confirm= False, logger=command_logger)
+            #        self._commands.append(virtual_command)
+            pass
         # if single command exists, then assume its the main command
         if len(self._commands) == 1 :
             self._argv = [self._argv[0]] + self._commands[0].name + self._argv[1:]
@@ -739,12 +768,20 @@ class CommandsManager:
                 print(f"{self._name}: error:", error, file=sys.stderr)
             return -1
         
+        # logger
+        if self._logger != None:
+            self._logger.debug(f"Invoking {command_to_execute.func.__name__}({command_args_dict}) ...")
+
+        # logger arg
+        if command_to_execute.logger_arg != None:
+            command_args_dict[command_to_execute.logger_arg] = self._logger
+
         # invoke
-        # print(command_args_dict)
         if not command_to_execute.instance is None:
             func_bounded = types.MethodType(command_to_execute.func, command_to_execute.instance)
             return func_bounded(**command_args_dict)
         else:
+            # invoke
             return command_to_execute.func(**command_args_dict)
 
         

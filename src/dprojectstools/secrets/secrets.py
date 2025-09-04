@@ -52,6 +52,7 @@ class SecretsManager():
 
     # methods
     def get(self, name):
+        return self._get_nested(self._dict, name);     
         value = self._dict.get(name)
         if value is None:
             value = self.set(name, value)
@@ -62,7 +63,7 @@ class SecretsManager():
     
     def set(self, name, value=None):
         if value is None:
-            value = input("Enter secret '{0}' value: ".format(name))
+            value = getpass.getpass(prompt = "Enter secret '{0}' value: ".format(name))
         self._dict[name] = str(value)
         self._save()
         return value
@@ -81,6 +82,9 @@ class SecretsManager():
             return True
         return False
 
+    def to_json(self):
+        return json.dumps(self._dict, indent=4)
+
     # static methods
     @staticmethod
     def get_db_names():
@@ -96,7 +100,7 @@ class SecretsManager():
             with open(self._path, "r") as file:
                 text = file.read()
                 if not self._password is None:
-                    text = aes_decrypt(text, self._password);
+                    text = aes_decrypt(text, self._password)
                 self._dict = json.loads(text)
         pass
 
@@ -106,34 +110,15 @@ class SecretsManager():
             text = aes_encrypt(text, self._password);
         with open(self._path, "w") as file:
             file.write(text)
-    
-    
-    # commands
-    #@command("List secrets", index = 85)
-    #def secrets_list(self):
-    #    for key in self.keys():
-    #        print("{0}: {1}".format(key, self.get(key)))
-    #@command("Set secret")
-    #def secrets_set(self, 
-    #        name: Annotated[str, "Name"],
-    #        value: Annotated[str, "Value"]
-    #    ):
-    #    self.set(name, value)
-    #@command("Get secret")
-    #def secrets_get(self, 
-    #        name: Annotated[str, "Name"]
-    #    ):
-    #    value = self.get(name)
-    #    print(value)
-    #@command("Del secret")
-    #def secrets_delete(self, 
-    #        name: Annotated[str, "Name"]
-    #    ):
-    #    self.delete(name)
-    #
-    #    # methods
-    #def exec(self, argv):
-    #    commandsManager = CommandsManager()
-    #    commandsManager.register(self)
-    #    return commandsManager.execute(argv)        
+    def _get_nested(self, dictionary, path, default=None):
+        keys = path.split('.')
+        current = dictionary
+        for key in keys:
+            if isinstance(current, dict):
+                current = current.get(key, default)
+            else:
+                return default
+        return current
 
+    
+    

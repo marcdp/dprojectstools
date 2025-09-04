@@ -42,6 +42,7 @@ class Xgettext:
         # tag: None
     ):
 
+
         # vars
         self._path = path
         self._extensions = extensions
@@ -233,7 +234,7 @@ class Xgettext:
         result.append(f"msgid \"\"")
         result.append(f"msgstr \"\"")
         result.append(f"\"Project-Id-Version: {self._project_name} {self._project_version}\\n\"")
-        result.append(f"\"POT-Creation-Date: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z")}\\n\"")
+        result.append(f"\"POT-Creation-Date: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")}\\n\"")
         if locale != None:
             result.append(f"\"Language: {locale}\\n\"")
         result.append(f"\"MIME-Version: 1.0\\n\"")

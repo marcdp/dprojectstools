@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="database">
+    <xs:complexType>
+      <xs:sequence>
+        <!-- tables -->
+        <xs:element name="tables">
+          <xs:complexType>
+            <xs:sequence>
+              <!-- table-->
+              <xs:element minOccurs="0" maxOccurs="unbounded" name="table">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="columns">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element maxOccurs="unbounded" name="column">
+                            <xs:complexType>
+                              <xs:attribute name="name" type="xs:string" use="required" />
+                              <xs:attribute name="description" type="xs:string" use="optional" />
+                              <xs:attribute name="dataType" type="xs:string" use="required" />
+                              <xs:attribute name="size" type="xs:unsignedInt" use="optional" />
+                              <xs:attribute name="isAutoincrement" type="xs:boolean" use="optional" />
+                              <xs:attribute name="null" type="xs:boolean" use="optional" />
+                              <xs:attribute name="precision" type="xs:unsignedInt" use="optional" />
+                              <xs:attribute name="scale" type="xs:unsignedInt" use="optional" />
+                              <xs:attribute name="collation" type="xs:string" use="optional" />
+                              <xs:attribute name="default" type="xs:string" use="optional" />
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                    <!-- table pk -->
+                    <xs:element minOccurs="0" maxOccurs="1" name="primaryKey">
+                      <xs:complexType>
+                        <xs:attribute name="name" type="xs:string" use="required" />
+                        <xs:attribute name="columns" type="xs:string" use="required" />
+                      </xs:complexType>
+                    </xs:element>
+                    <!-- table fk -->
+                    <xs:element minOccurs="0" maxOccurs="1" name="foreignKeys">
+                      <xs:complexType>
+                        <xs:sequence minOccurs="0">
+                          <xs:element minOccurs="0" maxOccurs="unbounded" name="foreignKey">
+                            <xs:complexType>
+                              <xs:attribute name="name" type="xs:string" use="required" />
+                              <xs:attribute name="description" type="xs:string" use="optional" />
+                              <xs:attribute name="columns" type="xs:string" use="required" />
+                              <xs:attribute name="refTable" type="xs:string" use="required" />
+                              <xs:attribute name="refColumns" type="xs:string" use="required" />
+                              <xs:attribute name="onDelete" type="xs:string" use="optional" />
+                              <xs:attribute name="onUpdate" type="xs:string" use="optional" />
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                    <!-- table indexes -->
+                    <xs:element minOccurs="0" maxOccurs="1" name="indexes">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element minOccurs="0" maxOccurs="unbounded" name="index">
+                            <xs:complexType>
+                              <xs:attribute name="name" type="xs:string" use="required" />
+                              <xs:attribute name="description" type="xs:string" use="optional" />
+                              <xs:attribute name="unique" type="xs:boolean" use="optional" />
+                              <xs:attribute name="columns" type="xs:string" use="required" />
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element minOccurs="0" name="records" />
+                  </xs:sequence>
+                  <!-- table attributes -->
+                  <xs:attribute name="name" type="xs:string" use="required" />
+                  <xs:attribute name="description" type="xs:string" use="optional" />
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <!-- views -->
+        <xs:element name="views" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element minOccurs="0" maxOccurs="unbounded" name="view">
+                <xs:complexType>
+                  <xs:simpleContent>
+                    <xs:extension base="xs:string">
+                      <xs:attribute name="name" type="xs:string" use="required" />
+                      <xs:attribute name="description" type="xs:string" use="optional" />
+                    </xs:extension>
+                  </xs:simpleContent>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <!-- procedures -->
+        <xs:element name="procedures" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element minOccurs="0" maxOccurs="unbounded" name="procedure">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="arguments">
+                      <xs:complexType>
+                        <xs:sequence minOccurs="0">
+                          <xs:element maxOccurs="unbounded" name="argument">
+                            <xs:complexType>
+                              <xs:attribute name="name" type="xs:string" use="required" />
+                              <xs:attribute name="dataType" type="xs:string" use="required" />
+                              <xs:attribute name="size" type="xs:unsignedInt" use="optional" />
+                              <xs:attribute name="precision" type="xs:unsignedInt" use="optional" />
+                              <xs:attribute name="scale" type="xs:unsignedInt" use="optional" />
+                              <xs:attribute name="null" type="xs:boolean" use="optional" />
+                              <xs:attribute name="direction" type="xs:string" use="required" />
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="content" />
+                  </xs:sequence>
+                  <xs:attribute name="name" type="xs:string" use="required" />
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <!-- sequences -->
+        <xs:element name="sequences" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element minOccurs="0" maxOccurs="unbounded" name="sequence">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required" />
+                  <xs:attribute name="description" type="xs:string" use="optional" />
+                  <xs:attribute name="initValue" type="xs:unsignedInt" use="required" />
+                  <xs:attribute name="incrementBy" type="xs:unsignedInt" use="required" />
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <!-- scripts -->
+        <xs:element name="scripts" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element minOccurs="0" maxOccurs="unbounded" name="script">
+                <xs:complexType>
+                  <xs:simpleContent>
+                    <xs:extension base="xs:string">
+                      <xs:attribute name="name" type="xs:string" use="required" />
+                      <xs:attribute name="description" type="xs:string" use="optional" />
+                    </xs:extension>
+                  </xs:simpleContent>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+        <!-- database attributes -->
+        <xs:attribute name="name" type="xs:string" use="optional" />
+        <xs:attribute name="description" type="xs:string" use="optional" />
+        <xs:attribute name="collation" type="xs:string" use="optional" />
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
