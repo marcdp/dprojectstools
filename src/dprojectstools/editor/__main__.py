@@ -9,6 +9,12 @@ def edit( filename: Annotated[str,  Argument("PATH")] = ""):
     editor = Editor()
     return editor.editFile(filename)
 
+#@command("Dump text")
+#def dump( filename: Annotated[str,  Argument("PATH")] = ""):
+#    editor = Editor()
+#    return editor.editFile(filename, dump = True)
+    
+
 # main
 def main():
     commandsManager = CommandsManager()

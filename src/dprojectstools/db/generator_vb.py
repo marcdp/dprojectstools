@@ -21,8 +21,14 @@ def column_to_net_type(column: Column):
     if column.data_type == DataType.Numeric:
         if column.scale == 0 and column.precision == 0:
             result = "Decimal"
+        elif column.scale == 22 and column.precision == 7:
+            result = "Decimal"
+        elif column.scale == 0 and column.precision >= 1:
+            result = "Decimal"
+        elif column.scale == 2 and column.precision == 5:
+            result = "Decimal"
         elif column.precision <= 7:
-            result = "Single"    
+            result = "Single"
         elif column.precision <= 15:
             result = "Double"    
         else:
@@ -280,11 +286,15 @@ def get_procedure_arguments(procedure: Procedure):
     for argument in procedure.arguments:
         if index > 0:
             result += ","
-        argument_net_type = column_to_net_type(argument)
-        if argument_net_type == "String":
-            result += f"ByVal {argument.name} As String"
+        argument_net_type = column_to_net_type(argument)        
+        if argument.direction == "IN":
+            result += f"ByVal "
         else:
-            result += f"ByVal {argument.name} As Nullable(Of {argument_net_type})"
+            result += f"ByRef "
+        if argument_net_type == "String":
+            result += f"{argument.name} As String"
+        else:
+            result += f"{argument.name} As Nullable(Of {argument_net_type})"
         index += 1
     return result
 
@@ -1106,6 +1116,7 @@ class GeneratorVbV1():
                 code.append(f"                cmd.Parameters.Add(param{index})")
                 index += 1 
             code.append(f"                cmd.ExecuteNonQuery()")
+            # todo .. read output arguments
             code.append(f"            Catch e As Exception")
             code.append(f"                Throw")
             code.append(f"            End Try")

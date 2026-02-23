@@ -42,7 +42,7 @@ class Editor:
         self._select_y = None
 
     # methods
-    def editFile(self, filename: str, password: str = None):
+    def editFile(self, filename: str, password: str = None, dump: bool = False):
         # password
         if password != None:
             self._password = password
@@ -61,6 +61,11 @@ class Editor:
         except ValueError as e:
             print("error: invalid password")
             return False
+        # dump
+        if dump:
+            text = self._newline.join(self._lines)
+            print(text)
+            return True
         # loop
         try:
             # buffer alternate
