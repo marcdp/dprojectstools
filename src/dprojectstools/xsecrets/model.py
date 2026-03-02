@@ -18,7 +18,7 @@ class SecretEntry:
     services: List[str]
     value: object
     description: Optional[str] = None
-    public: Optional[Dict[str, Any]] = None
+    meta: Optional[Dict[str, Any]] = None
 
     # Validation
     def validate(self) -> None:
@@ -33,19 +33,13 @@ class SecretEntry:
 
     # Serialization
     def to_dict(self) -> Dict[str, Any]:
-        data = {
+        return {
             "type": self.type,
+            "description": self.description,
+            "meta": self.meta,
             "services": self.services,
             "value": self.value,
         }
-
-        if self.description:
-            data["description"] = self.description
-
-        if self.public is not None:
-            data["public"] = self.public
-
-        return data
 
     @staticmethod
     def from_dict(key: str, data: Dict[str, Any]) -> "SecretEntry":
@@ -53,9 +47,9 @@ class SecretEntry:
             key=key,
             type=data["type"],
             services=data["services"],
-            value=data["value"],
             description=data.get("description"),
-            public=data.get("public"),
+            meta=data.get("meta"),
+            value=data["value"]
         )
 
 

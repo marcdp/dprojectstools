@@ -1,11 +1,13 @@
 import base64
+from hashlib import sha256
 from pathlib import Path
 import os
 import copy
 from argon2.low_level import hash_secret_raw, Type
 from typing import Optional
+
+import keyring
 from ..editor import Editor
-from ..crypto import aes_decrypt, aes_encrypt, password_generate
 from .model import SecretEntry, SecretsMeta, SecretsStore
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -17,10 +19,8 @@ FILE_EXTENSION = ".json"
 ENC_PREFIX = "enc:"
 CHECK_VALUE = "xsecrets"
 
-
 # class
 class XSecrets():
-
 
     # ctr
     def __init__(self, dbname, password = None, create = False):
@@ -41,25 +41,33 @@ class XSecrets():
         self._load()
         # save if required
         if create:
-            if self._password is None:
+            # validation
+            if password == None:
                 raise ValueError("Password is required to create a new secrets db")            
+            # save
             self._save()
+            # ensure is locked
+            self.lock()
 
 
     # methods
     def delete(self):
+        # delete
         os.remove(self._path)
 
     def get(self, name):
+        # get entry value
         entry = self._store.get(name)
         entryCloned = copy.deepcopy(entry)
         entryCloned.value = self._decrypt_value(entryCloned.value)
         return entryCloned
 
     def exists(self, name):
+        # exists entry
         return self._store.exists(name)
 
-    def set(self, name, value, type: str = None, services: Optional[list] = None, description: str = ""):
+    def set(self, name, value, type: str = None, services: Optional[list] = None, description: str = "", meta: Optional[dict] = None):
+        # set entry value
         self._validate_password()
         if self._store.exists(name):
             entry = self._store.get(name)
@@ -67,6 +75,7 @@ class XSecrets():
             entry = SecretEntry(
                 key         = name,
                 type        = "password",
+                meta        = {},
                 services    = [],
                 value       = "",
                 description = ""
@@ -77,57 +86,98 @@ class XSecrets():
             entry.services = services
         if description:
             entry.description = description
+        if meta is not None and len(meta) > 0:
+            entry.meta = meta
         entry.value = self._encrypt_value(value)
         self._store.set(entry)
         self._save()
-        return value
     
     def keys(self):
+        # get keys list
         return self._store.list_keys()
     
     def remove(self, name):
+        # remove entry
         self._validate_password()
         entry = self._store.get(name)
         self._store.remove(name)
         self._save()
         
     def edit(self):
+        # edit
         tmp = copy.deepcopy(self._store)
+        # decrypt
         for entry in tmp.secrets.values():
             entry.value = self._decrypt_value(entry.value)
+        # edit
         editor = Editor()
         text = tmp.to_json()
         result = editor.editText(text, format = "json")
+        # apply changes
         if result != None:
+            # load
             tmp = SecretsStore.from_json(self._path.stem, result)
-            for entry in tmp.secrets.values():
-                entry.value = self._encrypt_value(entry.value)
+            # encrypt
+            for key in tmp.list_keys():
+                entry = tmp.get(key)                
+                # check if changed
+                if self._store.exists(key):
+                    old_entry = self._store.get(key)
+                    if entry.value == self._decrypt_value(old_entry.value):
+                        entry.value = old_entry.value
+                        continue
+                # encrypt changed value only
+                entry.value = self._encrypt_value(entry.value)       
+            # reassign
             self._store = tmp
+            # save
             self._save()
-            return True
-        return False
     
     def edit_secret(self, name):
+        # edit single secret
         entry = self._store.get(name)
+        # edit
         editor = Editor()
         text = entry.value
         text = self._decrypt_value(text)
         if text == "":
             text = " "
         result = editor.editText(text, format = entry.type)
+        # apply changes
         if result != None:
             entry.value = self._encrypt_value(result)
             self._store.set(entry)
             self._save()
-            return True
-        return False
 
     def to_json(self):
+        # to json
         tmp = copy.deepcopy(self._store)
         for entry in tmp.secrets.values():
             entry.value = self._decrypt_value(entry.value)
         return tmp.to_json()
 
+    def unlock(self):
+        # unlocking
+        self._validate_password()
+        key = self._get_key()
+        encoded_key = base64.b64encode(key).decode()
+        canonical_path = str(self._path.resolve())
+        store_id = sha256(canonical_path.encode()).hexdigest()
+        keyring.set_password(KEYRING_APP, store_id, encoded_key)
+
+    def is_locked(self):
+        # check if locked
+        canonical_path = str(self._path.resolve())
+        store_id = sha256(canonical_path.encode()).hexdigest()
+        encoded_key = keyring.get_password(KEYRING_APP, store_id)
+        return encoded_key is None
+    
+    def lock(self):
+        # lock
+        canonical_path = str(self._path.resolve())
+        store_id = sha256(canonical_path.encode()).hexdigest()
+        if not keyring.get_password(KEYRING_APP, store_id) is None:
+            keyring.delete_password(KEYRING_APP, store_id)
 
     # static methods
     @staticmethod
@@ -145,6 +195,10 @@ class XSecrets():
     def exists_db(dbname: str) -> bool:
         path = XSecrets._get_store_path(dbname)
         return os.path.isfile(path)
+    @staticmethod
+    def is_locked_db(dbname: str) -> bool:
+        secrets = XSecrets(dbname)
+        return secrets.is_locked()
     
 
     # read/write utils
@@ -164,6 +218,7 @@ class XSecrets():
             self._store.meta.check = self._encrypt_value(CHECK_VALUE)
     
     def _save(self):
+        # save
         text = self._store.to_json()
         with open(self._path, "w") as file:
             file.write(text)
@@ -171,9 +226,11 @@ class XSecrets():
 
     # path utils
     def _get_store_path(dbname: str) -> Path:
+        # get path for dbname, based on git repo or current folder
         return Path(XSecrets._get_folder_path(), dbname + FILE_EXTENSION)
     
     def _get_folder_path(start_path: Optional[Path] = None) -> Optional[Path]:
+        # get folder path based on git repo or current folder
         if start_path is None:
             current_path = Path.cwd()
         else:
@@ -198,19 +255,27 @@ class XSecrets():
             raise ValueError("Invalid password")
     
     def _get_key(self):
+        # get key, derive if not exists, or return cached
+        if self._password is None and self._key is None:
+            # try to get from keyring
+            canonical_path = str(self._path.resolve())
+            store_id = sha256(canonical_path.encode()).hexdigest()
+            encoded_key = keyring.get_password(KEYRING_APP, store_id)
+            if encoded_key:
+                self._key = base64.b64decode(encoded_key)
         if self._key is not None:
             return self._key
         if not self._password:
             raise ValueError("Store is locked. Password required.")
         if self._key is None:
-            # deriva la key
+            # derive the key
             if self._store.meta.crypto_version == 1:
                 # v1: argon2id + AES-256
                 self._key = hash_secret_raw(
                     secret      = self._password.encode(),
                     salt        = bytes.fromhex(self._store.meta.salt),
-                    time_cost   = 3,
-                    memory_cost = 65536, 
+                    time_cost   = 5,
+                    memory_cost = 131072,  # 128Mb
                     parallelism = 4,
                     hash_len    = 32,
                     type        = Type.ID
@@ -223,6 +288,7 @@ class XSecrets():
         return self._key
     
     def _decrypt_value(self, encrypted_value):
+        # decrypt value
         key = self._get_key()
         if self._store.meta.crypto_version == 1:
             # schema 1: AES-GCM with random nonce
@@ -243,6 +309,7 @@ class XSecrets():
         raise ValueError("Invalid crypto version")
     
     def _encrypt_value(self, value):
+        # encrypt value
         key = self._get_key()
         if self._store.meta.crypto_version == 1:
             # scheme 1: AES-GCM with random nonce
@@ -260,3 +327,16 @@ class XSecrets():
             return ENC_PREFIX + "v" + str(self._store.meta.crypto_version) + ":" + base64.b64encode(encrypted_blob).decode("utf-8")
         # error
         raise ValueError("Invalid crypto version")
+
+    # store
+    # encoded_key = base64.b64encode(self._key).decode()
+    # keyring.set_password("xsecrets", store_name, encoded_key)
+
+    # retrieve
+    #encoded_key = keyring.get_password("xsecrets", store_name)
+    #if encoded_key:
+    #    self._key = base64.b64decode(encoded_key)
+
+    # lock
+    #keyring.delete_password("xsecrets", store_name)
+    #self._key = None

@@ -682,7 +682,7 @@ class CommandsManager:
         # normalize flags, convert "--flag value1 --flag value2 --flag value3" to "--flag value1||||value2||||value3"
         flag_value_separator = "||||"
         for flag in command_to_execute.flags:
-            if flag.type == "List":
+            if flag.type == "List" or flag.type == "dict":
                 flag_values = []
                 while True:
                     index = -1
@@ -716,6 +716,8 @@ class CommandsManager:
                     command_args_dict[flag.name] = flag.default
                     if flag.type == "List" and isinstance(flag.default, str):
                         command_args_dict[flag.name] = flag.default.split(",")
+                    elif flag.type == "dict" and isinstance(flag.default, str):
+                        command_args_dict[flag.name] = dict(item.split("=") for item in flag.default.split(","))
             elif flag.type == "bool":
                 command_args_dict[flag.name] = True
                 command_args.pop(index)
@@ -732,6 +734,8 @@ class CommandsManager:
                         flag_value = bool(flag_value)
                     elif flag.type == "List":
                         flag_value = flag_value.split(flag_value_separator)
+                    elif flag.type == "dict":
+                        flag_value = dict(item.split("=") for item in flag_value.split(flag_value_separator))
                 except:
                     command_args_errors.append(f"unable to convert flag '-{flag.char}, --{flag.alias}' to '{flag.type}': {flag_value}")
                 command_args_dict[flag.name] = flag_value

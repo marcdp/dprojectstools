@@ -1,5 +1,6 @@
 import sys
 import getpass
+import secrets as secrets_module
 from typing import Annotated
 from .xsecrets import XSecrets
 from dprojectstools.commands import command, Argument, Flag, CommandsManager
@@ -9,11 +10,9 @@ from dprojectstools.commands import command, Argument, Flag, CommandsManager
 def error(message: str) -> None:
     print(f"ERROR: {message}", file=sys.stderr)
 def ask_password(confirm: bool = False) -> str:
-    prompt = "Enter password: "
-    result = getpass.getpass(prompt, echo_char="*")
+    result = getpass.getpass("Enter password: ", echo_char="*")
     if confirm:
-        prompt_confirm = "Confirm password: "
-        result_confirm = getpass.getpass(prompt_confirm, echo_char="*")
+        result_confirm = getpass.getpass("Confirm password: ", echo_char="*")
         if result != result_confirm:
             error("Passwords do not match.")
             sys.exit(1)
@@ -21,7 +20,10 @@ def ask_password(confirm: bool = False) -> str:
 
 
 # main
-@command("Create secrets db")
+@command("Create secrets db", examples=[
+    "xsecrets create dev",
+    "xsecrets create dev --force"
+])
 def create(
         dbname: Annotated[str,  Argument("NAME")],
         force: Annotated[bool,  Flag('f', "force")] = False
@@ -37,10 +39,13 @@ def create(
     # ask for password 
     password = ask_password(confirm=True) 
     # create instance (will create empty store if not exists)
-    XSecrets(dbname, password = password, create = True)
+    XSecrets(dbname, password = password, create = True)    
 
 
-@command("List secrets dbs", alias=["list"])
+@command("List secrets dbs", alias=["list"], examples=[
+    "xsecrets list",
+    "xsecrets list dev"
+])
 def listcmd(
     dbname: Annotated[str,  Argument("NAME")] = None
     ):
@@ -55,7 +60,10 @@ def listcmd(
         for db_name in XSecrets.get_db_names():
             print(db_name)
 
-@command("Edit secrets dbs")
+@command("Edit secrets dbs", examples=[
+    "xsecrets edit",
+    "xsecrets edit dev"
+])
 def edit(
         dbname: Annotated[str,  Argument("NAME")],
         key: Annotated[str,  Argument("KEY")] = ""
@@ -64,7 +72,9 @@ def edit(
         error(f"Secrets db '{dbname}' not found.")
         return -1
     # ask for password if interactive and not provided
-    password = ask_password()
+    password = None
+    if XSecrets.is_locked_db(dbname):
+        password = ask_password()
     # create instance
     secrets = XSecrets(dbname, password = password)
     # action
@@ -73,7 +83,9 @@ def edit(
     else:
         secrets.edit()
 
-@command("Get secret value from db")
+@command("Get secret value from db", examples=[
+    "xsecrets get dev mysecret"
+])
 def get(
         dbname: Annotated[str,  Argument("NAME")],
         key: Annotated[str,  Argument("KEY")]
@@ -82,7 +94,9 @@ def get(
         error(f"Secrets db '{dbname}' not found.")
         return -1
     # ask for password if interactive and not provided
-    password = ask_password()
+    password = None
+    if XSecrets.is_locked_db(dbname):
+        password = ask_password()
     # create instance
     secrets = XSecrets(dbname, password = password)
     # action
@@ -93,7 +107,13 @@ def get(
         error(f"Secret '{key}' not found.") 
         return -1
 
-@command("Set secret value from db")
+@command("Set secret value from db", examples=[
+    "xsecrets set dev mysecret",
+    "xsecrets set dev mysecret myvalue",
+    "xsecrets set dev mysecret myvalue --description 'My secret' --services api1,backend1 --type password --force",
+    "xsecrets set dev mysecret --generate --length 64",
+    "echo myvalue | xsecrets set dev mysecret"
+])
 def set(
         dbname: Annotated[str,  Argument("NAME")],
         key: Annotated[str,  Argument("KEY")],
@@ -101,12 +121,22 @@ def set(
         type_name: Annotated[str,  Flag('t', "type", alias="type")] = "",
         services: Annotated[str,  Flag('s', "services")] = "",
         description: Annotated[str,  Flag('d', "description")] = "",
+        meta: Annotated[dict,  Flag('m', "meta")] = {},
+        generate: Annotated[bool,  Flag('g', "generate")] = False,
+        length: Annotated[int,  Flag('l', "length")] = 32,
         force: Annotated[bool,  Flag('f', "force")] = False
     ):
     if not XSecrets.exists_db(dbname):
         error(f"Secrets db '{dbname}' not found.")
         return -1
     interactive = sys.stdin.isatty() and value is None
+    # validation
+    if value and generate:        
+        error("Cannot specify both value and generate.")
+        return -1
+    # generate value if requested
+    if value is None and generate:        
+        value = secrets_module.token_urlsafe(length)
     # if value is not provided, read from stdin or ask interactively
     if value is None:
         if sys.stdin.isatty():
@@ -123,7 +153,9 @@ def set(
             error("Aborting update: empty value.")
             return -1
     # ask for password if interactive and not provided
-    password = ask_password()
+    password = None
+    if XSecrets.is_locked_db(dbname):
+        password = ask_password()
     # init store
     secrets = XSecrets(dbname, password = password)
     # check if exists, will raise if not
@@ -140,9 +172,13 @@ def set(
                 value, 
                 type = type_name, 
                 services = [s.strip() for s in services.split(",") if s.strip()] if services else [], 
+                meta=meta,
                 description = description)
 
-@command("Remove secret value from")
+@command("Remove secret value from db", examples=[
+    "xsecrets remove dev mysecret",
+    "xsecrets remove dev mysecret --force"
+])
 def remove(
         dbname: Annotated[str,  Argument("NAME")],
         key: Annotated[str,  Argument("KEY")],  
@@ -151,6 +187,10 @@ def remove(
     if not XSecrets.exists_db(dbname):
         error(f"Secrets db '{dbname}' not found.")
         return -1
+    # ask for password if interactive and not provided
+    password = None
+    if XSecrets.is_locked_db(dbname):
+        password = ask_password()
     # create instance
     secrets = XSecrets(dbname)
     # validate
@@ -166,7 +206,9 @@ def remove(
     secrets.remove(key)
 
 
-@command("Dump secrets dbs")
+@command("Dump secrets dbs", examples=[
+    "xsecrets dump dev"
+])
 def dump(
         dbname: Annotated[str,  Argument("NAME")]
     ):
@@ -174,7 +216,9 @@ def dump(
         error(f"Secrets db '{dbname}' not found.")
         return -1
     # ask for password if interactive and not provided
-    password = ask_password()
+    password = None
+    if XSecrets.is_locked_db(dbname):
+        password = ask_password()
     # create instance
     secrets = XSecrets(dbname, password = password)
     # action
@@ -182,7 +226,10 @@ def dump(
     # print
     print(text)
 
-@command("Delete secrets db")
+@command("Delete secrets db", examples=[
+    "xsecrets delete dev",
+    "xsecrets delete dev --force"
+])
 def delete(
         dbname: Annotated[str,  Argument("NAME")],
         force: Annotated[bool,  Flag('f', "force")] = False
@@ -201,6 +248,60 @@ def delete(
     # action
     xsecrets.delete()
 
+
+@command("Unlock secrets db", examples=[
+    "xsecrets unlock dev"
+])
+def unlock(
+        dbname: Annotated[str,  Argument("NAME")]
+    ):
+    # validation
+    if not XSecrets.exists_db(dbname):
+        error(f"Secrets db '{dbname}' not found.")
+        return -1
+    if not XSecrets.is_locked_db(dbname):
+        error(f"Secrets db '{dbname}' is not locked.")
+        return -1
+    # ask for password if interactive and not provided
+    password = ask_password()
+    # create instance 
+    xsecrets = XSecrets(dbname, password = password)
+    # action
+    xsecrets.unlock()
+
+@command("Lock secrets db", examples=[
+    "xsecrets lock dev"
+])
+def lock(
+        dbname: Annotated[str,  Argument("NAME")]
+    ):
+    # validation
+    if not XSecrets.exists_db(dbname):
+        error(f"Secrets db '{dbname}' not found.")
+        return -1
+    if XSecrets.is_locked_db(dbname):
+        error(f"Secrets db '{dbname}' is already locked.")
+        return -1    
+    # create instance 
+    xsecrets = XSecrets(dbname)
+    # action
+    xsecrets.lock()
+
+@command("Show secrets db status", examples=[
+    "xsecrets status dev"
+])
+def status(
+        dbname: Annotated[str,  Argument("NAME")]
+    ):
+    if not XSecrets.exists_db(dbname):
+        error(f"Secrets db '{dbname}' not found.")
+        return -1
+    # ask for password if interactive and not provided
+    if XSecrets.is_locked_db(dbname):
+        print("locked")
+    else:
+        print("unlocked")
+
 # main
 def main():
     commandsManager = CommandsManager()
@@ -215,9 +316,7 @@ if __name__ == "__main__":
 
 
 # todo
-# - in the creation of the store, ask for password and confirm, and create a "meta.check": "enc:v1:...."
-# - in edit: do no reencrypt unaltered secrets
-# - cache key in user session (ask password, derive key, store in user session/machine keyring, use cached key until invalid, then ask password again)
+# - type values (password, apikey, certificate, file, etc.)
 # - add TTL to cached keys
 
 
