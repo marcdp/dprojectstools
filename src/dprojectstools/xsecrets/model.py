@@ -5,21 +5,7 @@ import json
 
 # consts
 DEFAULT_SCHEMA_VERSION = 1
-
-# SecretValue
-@dataclass
-class SecretValue:
-    """
-    Holds the encrypted value string.
-    Expected format: enc:v1:<backend>:<blob>
-    """
-    content: str
-
-    def is_encrypted(self) -> bool:
-        return self.content.startswith("enc:")
-
-    def __str__(self) -> str:
-        return self.content
+DEFAULT_CRYPTO_VERSION = 1
 
 # SecretEntry
 @dataclass
@@ -30,7 +16,7 @@ class SecretEntry:
     key: str
     type: str
     services: List[str]
-    value: SecretValue
+    value: object
     description: Optional[str] = None
     public: Optional[Dict[str, Any]] = None
 
@@ -42,18 +28,15 @@ class SecretEntry:
         if not self.services:
             raise ValueError(f"Secret '{self.key}' must define services")
 
-        if not isinstance(self.value, SecretValue):
-            raise ValueError(f"Secret '{self.key}' value must be SecretValue")
-
-        if not self.value.is_encrypted():
-            raise ValueError(f"Secret '{self.key}' value must be encrypted")
+        if self.value == None:
+            raise ValueError(f"Secret '{self.key}' value must be something")
 
     # Serialization
     def to_dict(self) -> Dict[str, Any]:
         data = {
             "type": self.type,
             "services": self.services,
-            "value": self.value.content,
+            "value": self.value,
         }
 
         if self.description:
@@ -70,7 +53,7 @@ class SecretEntry:
             key=key,
             type=data["type"],
             services=data["services"],
-            value=SecretValue(data["value"]),
+            value=data["value"],
             description=data.get("description"),
             public=data.get("public"),
         )
@@ -79,20 +62,28 @@ class SecretEntry:
 # SecretsMeta
 @dataclass
 class SecretsMeta:
+    # fields
     schema_version: int = DEFAULT_SCHEMA_VERSION
-    extends: Optional[str] = None
-
+    crypto_version: int = DEFAULT_CRYPTO_VERSION
+    salt: str           = None
+    check: str          = None
+    # methods
     def to_dict(self) -> Dict[str, Any]:
-        data = {"schema_version": self.schema_version}
-        if self.extends:
-            data["extends"] = self.extends
+        data = {
+            "schema_version": self.schema_version,
+            "crypto_version": self.crypto_version,
+            "salt": self.salt,
+            "check": self.check,
+        }
         return data
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "SecretsMeta":
         return SecretsMeta(
             schema_version=data.get("schema_version", DEFAULT_SCHEMA_VERSION),
-            extends=data.get("extends"),
+            crypto_version=data.get("crypto_version", DEFAULT_CRYPTO_VERSION),
+            salt=data.get("salt"),
+            check=data.get("check"),
         )
 
 

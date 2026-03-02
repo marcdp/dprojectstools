@@ -24,9 +24,9 @@ def ask_password(confirm: bool = False) -> str:
 @command("Create secrets db")
 def create(
         dbname: Annotated[str,  Argument("NAME")],
-        password: Annotated[str,  Flag('p', "password")] = "",
         force: Annotated[bool,  Flag('f', "force")] = False
     ):
+    # validation
     if XSecrets.exists_db(dbname):
         if not force:
             confirm = input(f"Secrets db '{dbname}' already exists. Do you want to overwrite it? [y/n] ")
@@ -34,6 +34,9 @@ def create(
                 error("Aborting creation.")
                 return -1
         XSecrets.delete_db(dbname)
+    # ask for password 
+    password = ask_password(confirm=True) 
+    # create instance (will create empty store if not exists)
     XSecrets(dbname, password = password, create = True)
 
 
@@ -60,7 +63,11 @@ def edit(
     if not XSecrets.exists_db(dbname):
         error(f"Secrets db '{dbname}' not found.")
         return -1
-    secrets = XSecrets(dbname)
+    # ask for password if interactive and not provided
+    password = ask_password()
+    # create instance
+    secrets = XSecrets(dbname, password = password)
+    # action
     if key:
         secrets.edit_secret(key)
     else:
@@ -74,7 +81,11 @@ def get(
     if not XSecrets.exists_db(dbname):
         error(f"Secrets db '{dbname}' not found.")
         return -1
-    secrets = XSecrets(dbname)
+    # ask for password if interactive and not provided
+    password = ask_password()
+    # create instance
+    secrets = XSecrets(dbname, password = password)
+    # action
     if secrets.exists(key):
         entry = secrets.get(key)
         print(entry.value)
@@ -114,7 +125,7 @@ def set(
     # ask for password if interactive and not provided
     password = ask_password()
     # init store
-    secrets = XSecrets(dbname)
+    secrets = XSecrets(dbname, password = password)
     # check if exists, will raise if not
     if secrets.exists(key) and not force:
         if not interactive:
@@ -140,7 +151,9 @@ def remove(
     if not XSecrets.exists_db(dbname):
         error(f"Secrets db '{dbname}' not found.")
         return -1
+    # create instance
     secrets = XSecrets(dbname)
+    # validate
     if not secrets.exists(key):
         error(f"Secret '{key}' not found.")
         return -1
@@ -149,6 +162,7 @@ def remove(
         if confirm.strip().lower() not in ("y", "yes"):
             error("Aborting deletion.")
             return -1
+    # action
     secrets.remove(key)
 
 
@@ -159,8 +173,13 @@ def dump(
     if not XSecrets.exists_db(dbname):
         error(f"Secrets db '{dbname}' not found.")
         return -1
-    secrets = XSecrets(dbname)
+    # ask for password if interactive and not provided
+    password = ask_password()
+    # create instance
+    secrets = XSecrets(dbname, password = password)
+    # action
     text = secrets.to_json()
+    # print
     print(text)
 
 @command("Delete secrets db")
@@ -171,12 +190,15 @@ def delete(
     if not XSecrets.exists_db(dbname):
         error(f"Secrets db '{dbname}' not found.")
         return -1
+    # create instance 
     xsecrets = XSecrets(dbname)
+    # confirm
     if not force:
         confirm = input(f"Are you sure you want to delete the secrets db '{dbname}'? [y/n] ")
         if confirm.strip().lower() not in ("y", "yes"):
             error("Aborting deletion.")
             return -1
+    # action
     xsecrets.delete()
 
 # main
@@ -185,14 +207,18 @@ def main():
     commandsManager.register(module = sys.modules[__name__])
     try:
         commandsManager.execute(sys.argv, default_show_help = True)
-    except Exception as e:
-        error(f"Error: {e}")
+    except Exception as e:        
+        error(f"{e}")
         sys.exit(1)
 if __name__ == "__main__":
     main()
 
 
-
+# todo
+# - in the creation of the store, ask for password and confirm, and create a "meta.check": "enc:v1:...."
+# - in edit: do no reencrypt unaltered secrets
+# - cache key in user session (ask password, derive key, store in user session/machine keyring, use cached key until invalid, then ask password again)
+# - add TTL to cached keys
 
 
 
