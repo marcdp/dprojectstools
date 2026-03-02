@@ -9,12 +9,14 @@ from ..crypto import aes_decrypt, aes_encrypt, password_generate
 from .model import SecretEntry, SecretsMeta, SecretsStore
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+
 # consts
 KEYRING_APP = "xsecrets"
 GIT_FOLDER = ".secrets"
 FILE_EXTENSION = ".json"
 ENC_PREFIX = "enc:"
 CHECK_VALUE = "xsecrets"
+
 
 # class
 class XSecrets():
