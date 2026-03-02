@@ -603,7 +603,7 @@ class Editor:
     def save(self):
         # validate format
         if not self._validateFormat():
-            self._show_error(f"Unable to save: text is not a valid {self._format} document")
+            self._show_error(f"Unable to save: text is not a valid {self._format}")
             return False
         # encrypt if required
         text = self._newline.join(self._lines)
@@ -886,6 +886,10 @@ class Editor:
                 return True  
             except json.JSONDecodeError:
                 return False 
+        elif self._format == "password":
+            text = self._newline.join(self._lines)
+            if text.strip() == "":
+                return False
         return True
 
     # loop                

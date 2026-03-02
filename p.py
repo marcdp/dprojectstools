@@ -23,6 +23,7 @@ import shutil
 
 # install as development package:
 # pip install -e .
+# # manually add to the path c:\users\myuser\appdata\local\programs\python\python3....\...\scripts
 
 
 # secrets 

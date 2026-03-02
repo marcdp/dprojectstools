@@ -40,6 +40,7 @@ fonticons = "dprojectstools.images.fonticons:main"
 i18n-xgettext = "dprojectstools.i18n.xgettext:main"
 p = "dprojectstools.commands.p:main"
 secrets = "dprojectstools.secrets.__main__:main"
+xsecrets = "dprojectstools.xsecrets.__main__:main"
 db = "dprojectstools.db.__main__:main"
 
 

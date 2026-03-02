@@ -1,0 +1,12 @@
+{
+    "_meta": {
+        "schema_version": 1
+    },
+    "secrets": {
+        "pass1": {
+            "type": "password",
+            "services": [],
+            "value": "123456534_vale"
+        }
+    }
+}
