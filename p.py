@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 from dprojectstools.commands import command, CommandsManager
-from dprojectstools.secrets import SecretsManager
+from dprojectstools.xsecrets import XSecrets
 from dprojectstools.git import GitManager
-from dprojectstools.editor import Editor
 import subprocess
 import sys
 import os
@@ -26,13 +25,14 @@ import shutil
 # # manually add to the path c:\users\myuser\appdata\local\programs\python\python3....\...\scripts
 
 
-# secrets 
-secrets = SecretsManager("dprojectstools")
+# xsecrets 
+xsecrets = XSecrets("default")
 
 # controllers
 @command("Package build", index = 10)
 def package_build():
-    shutil.rmtree("./dist")
+    if os.path.exists("./dist"):
+        shutil.rmtree("./dist")
     subprocess.run("py -m build")
 
 @command("Package build and publish")
@@ -41,13 +41,13 @@ def package_publish():
     package_build()
     # publish
     myenv = os.environ.copy()
-    myenv["TWINE_PASSWORD"] = secrets.get("PYPI_AUTH_TOKEN")
+    myenv["TWINE_PASSWORD"] = xsecrets.getValue("PYPI_AUTH_TOKEN")
     subprocess.run("py -m twine upload dist/*", env = myenv)
 
 @command("Package install as development pacakge", index = 15)
 def package_install():
     # install
-    subprocess.run("pip install -e .")
+    subprocess.run("pip install -e .") 
 
 # execute
 commandsManager = CommandsManager()

@@ -1,3 +1,4 @@
+from pprint import pformat
 import sys
 import getpass
 import secrets as secrets_module
@@ -8,10 +9,16 @@ from dprojectstools.commands import command, Argument, Flag, CommandsManager
 
 # utils
 def error(message: str) -> None:
-    print(f"ERROR: {message}", file=sys.stderr)
-def ask_password(confirm: bool = False) -> str:
+    RED = "\033[31m"
+    RESET = "\033[0m"
+    print(f"{RED}{message}{RESET}", file=sys.stderr)
+
+def ask_password(confirm: bool = False, min_length: int = 8) -> str:
     result = getpass.getpass("Enter password: ", echo_char="*")
     if confirm:
+        if len(result) < min_length:
+            error(f"Password must be at least {min_length} characters long.")
+            sys.exit(1)
         result_confirm = getpass.getpass("Confirm password: ", echo_char="*")
         if result != result_confirm:
             error("Passwords do not match.")
@@ -126,14 +133,15 @@ def set(
         length: Annotated[int,  Flag('l', "length")] = 32,
         force: Annotated[bool,  Flag('f', "force")] = False
     ):
+    # validation
     if not XSecrets.exists_db(dbname):
         error(f"Secrets db '{dbname}' not found.")
         return -1
-    interactive = sys.stdin.isatty() and value is None
-    # validation
     if value and generate:        
         error("Cannot specify both value and generate.")
         return -1
+    # check interactive
+    interactive = sys.stdin.isatty() and value is None
     # generate value if requested
     if value is None and generate:        
         value = secrets_module.token_urlsafe(length)
@@ -287,20 +295,25 @@ def lock(
     # action
     xsecrets.lock()
 
-@command("Show secrets db status", examples=[
-    "xsecrets status dev"
+@command("Show secrets db info", examples=[
+    "xsecrets info dev"
 ])
-def status(
+def info(
         dbname: Annotated[str,  Argument("NAME")]
     ):
     if not XSecrets.exists_db(dbname):
         error(f"Secrets db '{dbname}' not found.")
         return -1
-    # ask for password if interactive and not provided
-    if XSecrets.is_locked_db(dbname):
-        print("locked")
-    else:
-        print("unlocked")
+    # create instance 
+    xsecrets = XSecrets(dbname)
+    # action
+    info = xsecrets.info()
+    # print
+    width = max(len(k) for k in info.keys())
+    print(f"Secrets db info:")
+    print("-" * (width + 2))
+    for k, v in info.items():
+        print(f"{k:<{width}} : {v}")
 
 # main
 def main():

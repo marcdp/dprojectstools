@@ -1,8 +1,11 @@
 import base64
+from dotenv import dotenv_values
 from hashlib import sha256
 from pathlib import Path
 import os
 import copy
+import re
+from unittest import result
 from argon2.low_level import hash_secret_raw, Type
 from typing import Optional
 
@@ -14,10 +17,11 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 # consts
 KEYRING_APP = "xsecrets"
-GIT_FOLDER = ".secrets"
+SECRETS_GIT_FOLDER = ".secrets"
 FILE_EXTENSION = ".json"
 ENC_PREFIX = "enc:"
 CHECK_VALUE = "xsecrets"
+CONFIG_FILE = ".xsecrets"
 
 # class
 class XSecrets():
@@ -25,7 +29,8 @@ class XSecrets():
     # ctr
     def __init__(self, dbname, password = None, create = False):
         # get path
-        self._path = XSecrets._get_store_path(dbname)
+        self._name = dbname
+        (self._path, self._path_config, self._git_project) = XSecrets._get_store_path(dbname)
         # validate
         if os.path.exists(self._path):
             if create:
@@ -37,30 +42,44 @@ class XSecrets():
         self._password = password
         # key
         self._key = None
-        # load
-        self._load()
         # save if required
         if create:
+            # new store
+            self._store = SecretsStore(
+                name = self._path.stem,
+                meta = SecretsMeta(
+                    salt = os.urandom(16).hex()
+                )
+            )
+            self._store.meta.check = self._encrypt_value(CHECK_VALUE)
             # validation
             if password == None:
                 raise ValueError("Password is required to create a new secrets db")            
             # save
             self._save()
-            # ensure is locked
-            self.lock()
-
+            # unlock
+            self.unlock()
+        else:
+            # load
+            self._load()
 
     # methods
     def delete(self):
         # delete
+        self.lock()
         os.remove(self._path)
 
     def get(self, name):
-        # get entry value
+        # get entry 
         entry = self._store.get(name)
         entryCloned = copy.deepcopy(entry)
         entryCloned.value = self._decrypt_value(entryCloned.value)
         return entryCloned
+
+    def getValue(self, name):
+        # get entry value
+        entry = self._store.get(name)
+        return self._decrypt_value(entry.value)
 
     def exists(self, name):
         # exists entry
@@ -149,6 +168,20 @@ class XSecrets():
             self._store.set(entry)
             self._save()
 
+    def info(self):
+        # info
+        info = {
+            "Project": self._git_project,
+            "Store name": self._name,
+            "Config path": self._path_config,
+            "Path": self._path,
+            "Status": f"locked (run 'xsecrets unlock {self._name}')" if self.is_locked() else "unlocked (cached in keyring)",
+            "Secrets count": len(self._store.secrets),
+            "Schema version": self._store.meta.schema_version,
+            "Crypto version": self._store.meta.crypto_version,
+        }
+        return info
+    
     def to_json(self):
         # to json
         tmp = copy.deepcopy(self._store)
@@ -156,6 +189,8 @@ class XSecrets():
             entry.value = self._decrypt_value(entry.value)
         return tmp.to_json()
 
+
+    # lock/unlock
     def unlock(self):
         # unlocking
         self._validate_password()
@@ -179,22 +214,33 @@ class XSecrets():
         if not keyring.get_password(KEYRING_APP, store_id) is None:
             keyring.delete_password(KEYRING_APP, store_id)
 
+
     # static methods
     @staticmethod
     def get_db_names():
-        folder = XSecrets._get_folder_path()
-        return [f.stem for f in folder.rglob(f"*{FILE_EXTENSION}") if f.is_file()]
+        (folder, _, _) = XSecrets._get_store_path("*")
+        folder_stem = folder.stem
+        rx = re.compile("^" + re.escape(folder_stem).replace(r"\*", r"(.+)") + "$")
+        placeholders = []
+        for file in folder.parent.glob(folder.name):  
+            file_stem = file.stem
+            placeholder = rx.match(file_stem).group(1)
+            placeholders.append(placeholder)
+        return placeholders
+    
     @staticmethod
     def delete_db(dbname: str) -> bool:
-        path = XSecrets._get_store_path(dbname)
+        (path, _, _) = XSecrets._get_store_path(dbname)
         if os.path.isfile(path):
             os.remove(path)
             return True
         return False
+    
     @staticmethod
     def exists_db(dbname: str) -> bool:
-        path = XSecrets._get_store_path(dbname)
+        (path, _, _) = XSecrets._get_store_path(dbname)
         return os.path.isfile(path)
+    
     @staticmethod
     def is_locked_db(dbname: str) -> bool:
         secrets = XSecrets(dbname)
@@ -227,10 +273,25 @@ class XSecrets():
     # path utils
     def _get_store_path(dbname: str) -> Path:
         # get path for dbname, based on git repo or current folder
-        return Path(XSecrets._get_folder_path(), dbname + FILE_EXTENSION)
+        git_path = XSecrets._get_git_folder_path()
+        file = git_path / SECRETS_GIT_FOLDER / (dbname + FILE_EXTENSION)
+        # check if exists .xsecrets
+        git_config_file = git_path / CONFIG_FILE
+        if git_config_file.exists() and git_config_file.is_file():
+            config = dotenv_values(git_config_file)
+            if "file" in config:
+                file = config["file"]
+                file = file.replace("{project}", git_path.stem).replace("{name}", dbname)
+                file = Path(file).resolve()
+                file.parent.mkdir(parents=True, exist_ok=True)
+                return (file, git_config_file, git_path.stem)
+        else:
+            git_config_file = None
+        # use {project}/.secrets
+        file.parent.mkdir(parents=True, exist_ok=True)
+        return (file, git_config_file, git_path.stem)
     
-    def _get_folder_path(start_path: Optional[Path] = None) -> Optional[Path]:
-        # get folder path based on git repo or current folder
+    def _get_git_folder_path(start_path: Optional[Path] = None) -> Optional[Path]:
         if start_path is None:
             current_path = Path.cwd()
         else:
@@ -238,11 +299,8 @@ class XSecrets():
         for parent in [current_path] + list(current_path.parents):
             git_dir = parent / ".git"
             if git_dir.exists() and git_dir.is_dir():
-                result = parent / GIT_FOLDER
-                result.mkdir(parents=True, exist_ok=True)
-                return result
+                return parent
         raise FileNotFoundError(f"No Git repository found starting from '{current_path}'")
-    
     
     # decrypt
     def _validate_password(self):
@@ -281,9 +339,12 @@ class XSecrets():
                     type        = Type.ID
                 )
             else:
-                raise ValueError(f"Unsupported crypto version in meta: {self._store.meta.crypto_version}")
+                raise ValueError(f"Unsupported crypto version in meta: {self._store.meta.crypto_version}")            
         # clear password from memory
         self._password = None
+        # unlock
+        if self._store.meta.check:
+            self.unlock()
         # return
         return self._key
     
@@ -328,15 +389,3 @@ class XSecrets():
         # error
         raise ValueError("Invalid crypto version")
 
-    # store
-    # encoded_key = base64.b64encode(self._key).decode()
-    # keyring.set_password("xsecrets", store_name, encoded_key)
-
-    # retrieve
-    #encoded_key = keyring.get_password("xsecrets", store_name)
-    #if encoded_key:
-    #    self._key = base64.b64decode(encoded_key)
-
-    # lock
-    #keyring.delete_password("xsecrets", store_name)
-    #self._key = None

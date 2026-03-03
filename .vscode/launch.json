@@ -10,7 +10,7 @@
             "type": "debugpy",
             "request": "launch",
             "module": "dprojectstools.xsecrets",
-            "args": ["set","dev","pass1","123456","--force","--meta","a=1","--meta","b=2"],
+            "args": ["list"],
         }
     ]
 }

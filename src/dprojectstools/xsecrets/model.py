@@ -10,9 +10,6 @@ DEFAULT_CRYPTO_VERSION = 1
 # SecretEntry
 @dataclass
 class SecretEntry:
-    """
-    Represents a single secret entry.
-    """
     key: str
     type: str
     services: List[str]
@@ -84,9 +81,6 @@ class SecretsMeta:
 # SecretsStore
 @dataclass
 class SecretsStore:
-    """
-    Represents one environment file (e.g., dev.json).
-    """
     name: str
     meta: SecretsMeta
     secrets: Dict[str, SecretEntry] = field(default_factory=dict)
@@ -124,7 +118,7 @@ class SecretsStore:
     # Serialization
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "_meta": self.meta.to_dict(),
+            "meta": self.meta.to_dict(),
             "secrets": {
                 key: entry.to_dict()
                 for key, entry in sorted(self.secrets.items())
@@ -138,14 +132,12 @@ class SecretsStore:
 
     @staticmethod
     def from_dict(name: str, data: Dict[str, Any]) -> "SecretsStore":
-        meta = SecretsMeta.from_dict(data.get("_meta", {}))
-
+        meta = SecretsMeta.from_dict(data.get("meta", {}))
         secrets_data = data.get("secrets", {})
         secrets = {
             key: SecretEntry.from_dict(key, value)
             for key, value in secrets_data.items()
         }
-
         return SecretsStore(
             name=name,
             meta=meta,
