@@ -1,10 +1,13 @@
 from pprint import pformat
 import sys
 import getpass
+import json
+from dotenv import dotenv_values
 import secrets as secrets_module
 from typing import Annotated
 from .xsecrets import XSecrets
 from dprojectstools.commands import command, Argument, Flag, CommandsManager
+from dprojectstools.utils.env import format_env_line
 
 
 # utils
@@ -46,7 +49,12 @@ def create(
     # ask for password 
     password = ask_password(confirm=True) 
     # create instance (will create empty store if not exists)
-    XSecrets(dbname, password = password, create = True)    
+    xsecrets = XSecrets(dbname, password = password, create = True)    
+    # print
+    info = xsecrets.info()
+    print(f"Store created: {dbname}")
+    print(f"Path: {xsecrets.getPath()}")
+    print(f"Status: {'locked' if xsecrets.is_locked() else 'unlocked'}")
 
 
 @command("List secrets dbs", alias=["list"], examples=[
@@ -58,14 +66,23 @@ def listcmd(
     ):
     if dbname:
         if XSecrets.exists_db(dbname):
-            secrets = XSecrets(dbname)
-            for key in secrets.keys():
-                print(key)
+            xsecrets = XSecrets(dbname)
+            keys = xsecrets.keys()
+            width = max(len(key) for key in keys) if keys else 0
+            for key in keys:
+                entry = xsecrets.get(key)
+                print(f"{key:<{width}}   {entry.type}")
         else:
             error(f"Secrets db '{dbname}' not found.")
     else:
-        for db_name in XSecrets.get_db_names():
-            print(db_name)
+        db_names = XSecrets.get_db_names()
+        width = max(len(db_name) for db_name in db_names) if db_names else 0
+        for db_name in db_names:
+            xsecrets = XSecrets(db_name)
+            keys_count = len(xsecrets.keys())
+            locked = xsecrets.is_locked()
+            print(f"{db_name:<{width}}   {keys_count} {'key ' if keys_count == 1 else 'keys'}  {'locked' if locked else 'unlocked'}")
+
 
 @command("Edit secrets dbs", examples=[
     "xsecrets edit",
@@ -90,6 +107,7 @@ def edit(
     else:
         secrets.edit()
 
+
 @command("Get secret value from db", examples=[
     "xsecrets get dev mysecret"
 ])
@@ -113,6 +131,7 @@ def get(
     else:
         error(f"Secret '{key}' not found.") 
         return -1
+
 
 @command("Set secret value from db", examples=[
     "xsecrets set dev mysecret",
@@ -167,7 +186,8 @@ def set(
     # init store
     secrets = XSecrets(dbname, password = password)
     # check if exists, will raise if not
-    if secrets.exists(key) and not force:
+    exists = secrets.exists(key)
+    if exists and not force:
         if not interactive:
             error(f"Secret '{key}' already exists. Use --force to overwrite it.")
             return -1
@@ -182,6 +202,12 @@ def set(
                 services = [s.strip() for s in services.split(",") if s.strip()] if services else [], 
                 meta=meta,
                 description = description)
+    # log
+    if exists:
+        print(f"{key} updated")
+    else:
+        print(f"{key} created")
+
 
 @command("Remove secret value from db", examples=[
     "xsecrets remove dev mysecret",
@@ -212,27 +238,9 @@ def remove(
             return -1
     # action
     secrets.remove(key)
+    # log
+    print(f"{key} removed")
 
-
-@command("Dump secrets dbs", examples=[
-    "xsecrets dump dev"
-])
-def dump(
-        dbname: Annotated[str,  Argument("NAME")]
-    ):
-    if not XSecrets.exists_db(dbname):
-        error(f"Secrets db '{dbname}' not found.")
-        return -1
-    # ask for password if interactive and not provided
-    password = None
-    if XSecrets.is_locked_db(dbname):
-        password = ask_password()
-    # create instance
-    secrets = XSecrets(dbname, password = password)
-    # action
-    text = secrets.to_json()
-    # print
-    print(text)
 
 @command("Delete secrets db", examples=[
     "xsecrets delete dev",
@@ -255,6 +263,8 @@ def delete(
             return -1
     # action
     xsecrets.delete()
+    # log
+    print(f"Secrets db '{dbname}' deleted.")
 
 
 @command("Unlock secrets db", examples=[
@@ -276,6 +286,9 @@ def unlock(
     xsecrets = XSecrets(dbname, password = password)
     # action
     xsecrets.unlock()
+    # log
+    print(f"Secrets db '{dbname}' unlocked.")
+
 
 @command("Lock secrets db", examples=[
     "xsecrets lock dev"
@@ -294,6 +307,9 @@ def lock(
     xsecrets = XSecrets(dbname)
     # action
     xsecrets.lock()
+    # log
+    print(f"Secrets db '{dbname}' locked.")
+
 
 @command("Show secrets db info", examples=[
     "xsecrets info dev"
@@ -314,6 +330,178 @@ def info(
     print("-" * (width + 2))
     for k, v in info.items():
         print(f"{k:<{width}} : {v}")
+
+
+@command("Export secrets", examples=[
+    "xsecrets export dev",
+    "xsecrets export dev --format env",
+    "xsecrets export dev --format json",
+    "xsecrets export dev --format xsecrets"
+])
+def export(
+        dbname: Annotated[str,  Argument("NAME")],
+        format: Annotated[str,  Flag(' ', "format")] = "env"
+    ):
+    if not XSecrets.exists_db(dbname):
+        error(f"Secrets db '{dbname}' not found.")
+        return -1
+    # ask for password if interactive and not provided
+    password = None
+    if XSecrets.is_locked_db(dbname):
+        password = ask_password()
+    # create instance
+    xsecrets = XSecrets(dbname, password = password)
+    # action
+    if format == "json":
+        # .json
+        dict = {}
+        for key in xsecrets.keys():
+            entry = xsecrets.get(key)
+            dict[key] = entry.value
+        print(json.dumps(dict, indent=2))
+    elif format == "env":
+        # .env
+        for key in xsecrets.keys():
+            entry = xsecrets.get(key)
+            print(format_env_line(key, entry.value))
+    elif format == "xsecrets":
+        # .xsecrets (internal format)
+        print(xsecrets.to_json())
+    else:
+        error(f"Unsupported export format '{format}'. Supported formats are: json, env, xsecrets.")
+        return -1
+
+
+@command("Import secrets into db", alias=["import"], examples=[
+    "xsecrets import dev ./secrets-key-value.json",
+    "xsecrets import dev ./secrets-key-value.env --force"
+])
+def imports(
+        dbname: Annotated[str,  Argument("NAME")],
+        filename: Annotated[str,  Argument("FILE")],
+        force: Annotated[bool, Flag('f', "force")] = False,
+        format: Annotated[str,  Flag(' ', "format")] = "auto",
+        verbose: Annotated[bool, Flag('v', "verbose")] = False,
+
+    ):
+    # validation
+    if not XSecrets.exists_db(dbname):
+        error(f"Secrets db '{dbname}' not found.")
+        return -1
+    # ask for password if interactive and not provided
+    password = None
+    if XSecrets.is_locked_db(dbname):
+        password = ask_password()
+    # create instance
+    xsecrets = XSecrets(dbname, password = password)
+    # auto detect format based on file extension
+    if format == "auto":
+        if filename.endswith(".json"):
+            format = "json"
+        elif filename.endswith(".env"):
+            format = "env"
+        elif filename.endswith(".xsecrets"):
+            format = "xsecrets"
+        else:
+            error(f"Cannot auto detect format from file extension. Please specify the format using --format flag.")
+            return -1
+    # action
+    new_count = 0
+    updated_count = 0
+    skipped_count = 0
+    untouched_count = 0
+    if format == "json":
+        # .json
+        with open(filename, "r") as f:
+            dict = json.load(f) 
+            print(f"Importing {len(dict)} secrets into '{dbname}' ...")
+            if verbose:
+                print()
+            for key, value in dict.items():
+                if xsecrets.exists(key):
+                    if not force:
+                        if verbose:
+                            print(f"! {key} (exists, skipping)")
+                        skipped_count += 1
+                        continue
+                    current_value = xsecrets.getValue(key)
+                    if current_value == value:
+                        if verbose:
+                            print(f"= {key}")
+                        untouched_count += 1
+                    else:
+                        if verbose:
+                            print(f"~ {key}")
+                        xsecrets.set(key, value)
+                        updated_count += 1
+                else:
+                    if verbose:
+                        print(f"+ {key}.")
+                    xsecrets.set(key, value)
+                    new_count += 1
+    elif format == "env":
+        # .env
+        dict = dotenv_values(filename)
+        print(f"Importing {len(dict)} secrets into '{dbname}' ...")
+        if verbose:
+            print()
+        for key, value in dict.items():
+            if xsecrets.exists(key):
+                if not force:
+                    if verbose:
+                        print(f"! {key} (exists, skipping)")
+                    skipped_count += 1
+                    continue
+                current_value = xsecrets.getValue(key)
+                if current_value == value:
+                    if verbose:
+                        print(f"= {key}")
+                    untouched_count += 1
+                else:
+                    if verbose:
+                        print(f"~ {key}")
+                    xsecrets.set(key, value)
+                    updated_count += 1
+            else:
+                if verbose:
+                    print(f"+ {key}.")
+                xsecrets.set(key, value)
+                new_count += 1
+    elif format == "xsecrets":
+        # .xsecrets (internal format)
+        with open(filename, "r") as f:
+            text = f.read()
+            tmp = XSecrets.from_json(text)
+            print(f"Importing {len(tmp.secrets.items())} secrets into '{dbname}' ...")
+            if verbose:
+                print()
+            for key, entry in tmp.secrets.items():
+                tmp_value = tmp.getValue(key)
+                if xsecrets.exists(key):
+                    if not force:
+                        if verbose:
+                            print(f"! {key} (exists, skipping)")
+                        skipped_count += 1
+                        continue
+                    current_value = xsecrets.getValue(key)
+                    if current_value == entry.value:
+                        if verbose:
+                            print(f"= {key}")
+                        untouched_count += 1
+                    else:
+                        if verbose:
+                            print(f"~ {key}")
+                        xsecrets.set(key, tmp_value, type = entry.type, services = entry.services, meta = entry.meta, description = entry.description)
+                        updated_count += 1
+                else:
+                    if verbose:
+                        print(f"+ {key}.")
+                    xsecrets.set(key, tmp_value, type = entry.type, services = entry.services, meta = entry.meta, description = entry.description)
+                    new_count += 1
+    if verbose:
+        print()
+    print(f"Done. {new_count} new, {updated_count} updated, {untouched_count} untouched, {skipped_count} skipped..")
+
 
 # main
 def main():

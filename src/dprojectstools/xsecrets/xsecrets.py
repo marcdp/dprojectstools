@@ -181,6 +181,9 @@ class XSecrets():
             "Crypto version": self._store.meta.crypto_version,
         }
         return info
+    def getPath(self):
+        # get path
+        return self._path
     
     def to_json(self):
         # to json
