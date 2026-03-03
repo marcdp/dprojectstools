@@ -4,7 +4,7 @@ import json
 import keyring
 import getpass
 from typing import Annotated
-from ..editor import Editor
+from ..xeditor import XEditor
 from ..crypto import aes_decrypt, aes_encrypt, password_generate
 from .. import PATH_DPROJECTSTOOLS
 
@@ -73,9 +73,9 @@ class SecretsManager():
         self._save()
 
     def edit(self):
-        editor = Editor()
+        xeditor = XEditor()
         text = json.dumps(self._dict, indent=4)
-        result = editor.editText(text, format = "json")
+        result = xeditor.editText(text, format = "json")
         if result != None:
             self._dict = json.loads(result)
             self._save()

@@ -10,13 +10,13 @@ where = ["src"]
 
 [project]
 name = "dprojectstools"
-version = "0.0.17"
+version = "0.0.18"
 authors = [
   { name="Marc Delos", email="marcdp@dprojects.com" },
 ]
 dependencies = [
     "argon2-cffi>=25.1.0",
-    "python-dotenv>1.2.2",
+    "python-dotenv>=1.2.2",
     "keyring>=25.6.0",
     "cryptography>=44.0.0",
     "pyperclip>=1.9.0",
@@ -37,7 +37,7 @@ classifiers = [
 
 [project.scripts]
 bc = "dprojectstools.math.bc:main"
-edit = "dprojectstools.editor.__main__:main"
+xedit = "dprojectstools.xeditor.__main__:main"
 fonticons = "dprojectstools.images.fonticons:main"
 i18n-xgettext = "dprojectstools.i18n.xgettext:main"
 p = "dprojectstools.commands.p:main"

@@ -13,7 +13,7 @@ import json
 TAB_SPACES = 4
 
 # class
-class Editor:
+class XEditor:
   
     # ctor
     def __init__(self) -> None:

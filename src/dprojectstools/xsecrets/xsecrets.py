@@ -10,7 +10,7 @@ from argon2.low_level import hash_secret_raw, Type
 from typing import Optional
 
 import keyring
-from ..editor import Editor
+from ..xeditor import XEditor
 from .model import SecretEntry, SecretsMeta, SecretsStore
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -129,9 +129,9 @@ class XSecrets():
         for entry in tmp.secrets.values():
             entry.value = self._decrypt_value(entry.value)
         # edit
-        editor = Editor()
+        xeditor = XEditor()
         text = tmp.to_json()
-        result = editor.editText(text, format = "json")
+        result = xeditor.editText(text, format = "json")
         # apply changes
         if result != None:
             # load
@@ -156,12 +156,12 @@ class XSecrets():
         # edit single secret
         entry = self._store.get(name)
         # edit
-        editor = Editor()
+        xeditor = XEditor()
         text = entry.value
         text = self._decrypt_value(text)
         if text == "":
             text = " "
-        result = editor.editText(text, format = entry.type)
+        result = xeditor.editText(text, format = entry.type)
         # apply changes
         if result != None:
             entry.value = self._encrypt_value(result)

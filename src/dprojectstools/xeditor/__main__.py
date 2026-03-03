@@ -1,19 +1,13 @@
 import sys
 from typing import Annotated
-from dprojectstools.editor import Editor
+from dprojectstools.xeditor import XEditor
 from dprojectstools.commands import command, Argument, Flag, CommandsManager
 
 # main
 @command("Simple file editor")
 def edit( filename: Annotated[str,  Argument("PATH")] = ""):
-    editor = Editor()
-    return editor.editFile(filename)
-
-#@command("Dump text")
-#def dump( filename: Annotated[str,  Argument("PATH")] = ""):
-#    editor = Editor()
-#    return editor.editFile(filename, dump = True)
-    
+    xeditor = XEditor()
+    return xeditor.editFile(filename)
 
 # main
 def main():

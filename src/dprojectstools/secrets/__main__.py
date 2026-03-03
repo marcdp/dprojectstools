@@ -1,7 +1,7 @@
 import sys
 from typing import Annotated
 from .secrets import SecretsManager
-from dprojectstools.editor import Editor
+from dprojectstools.xeditor import XEditor
 from dprojectstools.commands import command, Argument, Flag, CommandsManager
 
 # main
