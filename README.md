@@ -1,4 +1,9 @@
-# Introduction
+
+# dprojectstools
+
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green)
+![PyPI](https://img.shields.io/pypi/v/dprojectstools)
 
 A practical toolbox of small **developer-focused utilities** for everyday work in terminals and scripts.
 
@@ -26,7 +31,7 @@ This repo is a **collection**, not a single tool. Expect multiple commands and r
 
 ## Installation
 
-### Option A: Install from source (recommended during development)
+### Option A: Install from PYPI
 
 ```bash
 pip install dprojectstools
@@ -37,7 +42,6 @@ pip install dprojectstools
 ```bash
 git clone https://github.com/marcdp/dprojectstools.git
 cd dprojectstools
-# then install/enable your preferred way (pipx, pip, editable mode, etc.)
 ```
 
 ## Philosophy
