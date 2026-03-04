@@ -713,7 +713,7 @@ class XEditor:
         if self._dirty:
             filename += " *"
         header1 = f" {filename:} "
-        header2 = f" ln {self._cursor_y + 1}, col {self._cursor_x + 1}, lines {len(self._lines)}, Help ^H, {"INS" if self._insert else "OVR"} {self._encoding} {self._newline.replace('\n','LF').replace('\r','CR')} "
+        header2 = f" {f"{self._format}, " if self._format else ""}ln {self._cursor_y + 1}, col {self._cursor_x + 1}, lines {len(self._lines)}, Help ^H, {"INS" if self._insert else "OVR"} {self._encoding} {self._newline.replace('\n','LF').replace('\r','CR')} "
         header = header1 + (" " * (self._cols - len(header1) - len(header2) - 1)) + header2  
         # message
         if message != None:
