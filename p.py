@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from dprojectstools.commands import command, CommandsManager
-from dprojectstools.xsecrets import XSecrets
 from dprojectstools.git import GitManager
+from xvault import XVault
 import subprocess
 import sys
 import os
@@ -25,8 +25,8 @@ import shutil
 # # manually add to the path c:\users\myuser\appdata\local\programs\python\python3....\...\scripts
 
 
-# xsecrets 
-xsecrets = XSecrets("default")
+# xvault 
+xvault = XVault("default")
 
 # controllers
 @command("Package build", index = 10)
@@ -41,10 +41,10 @@ def package_publish():
     package_build()
     # publish
     myenv = os.environ.copy()
-    myenv["TWINE_PASSWORD"] = xsecrets.getValue("PYPI_AUTH_TOKEN")
+    myenv["TWINE_PASSWORD"] = xvault.getValue("PYPI_AUTH_TOKEN")
     subprocess.run("py -m twine upload dist/*", env = myenv)
 
-@command("Package install as development pacakge", index = 15)
+@command("Package install as development package", index = 15)
 def package_install():
     # install
     subprocess.run("pip install -e .") 
