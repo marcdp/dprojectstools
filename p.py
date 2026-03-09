@@ -26,7 +26,7 @@ import shutil
 
 
 # xvault 
-xvault = XVault("default")
+xvault = XVault("../dev/.secrets/pypi.env")
 
 # controllers
 @command("Package build", index = 10)
@@ -41,7 +41,7 @@ def package_publish():
     package_build()
     # publish
     myenv = os.environ.copy()
-    myenv["TWINE_PASSWORD"] = xvault.getValue("PYPI_AUTH_TOKEN")
+    myenv["TWINE_PASSWORD"] = xvault.get("PYPI_AUTH_TOKEN")
     subprocess.run("py -m twine upload dist/*", env = myenv)
 
 @command("Package install as development package", index = 15)

@@ -5,6 +5,8 @@ import sys
 import os
 import getpass
 import json
+import json5
+import yaml
 
 # read correctly ESCAPE sequence key in linux
 # undo + redo
@@ -53,6 +55,16 @@ class XEditor:
         # format
         if filename.endswith(".json.aes") or filename.endswith(".json"):
             self._format = "json"
+        elif filename.endswith(".jsonc.aes") or filename.endswith(".jsonc"):
+            self._format = "jsonc"
+        elif filename.endswith(".env.aes") or filename.endswith(".env"):
+            self._format = "env"
+        elif filename.endswith(".xml.aes") or filename.endswith(".xml"):
+            self._format = "xml"
+        elif filename.endswith(".md.aes") or filename.endswith(".md"):
+            self._format = "md"
+        elif filename.endswith(".yaml.aes") or filename.endswith(".yaml") or filename.endswith(".yml.aes") or filename.endswith(".yml"):
+            self._format = "yaml"
         else:
             self._format = None
         # load
@@ -81,9 +93,12 @@ class XEditor:
         # return
         return True
 
-    def editText(self, text:str, format:str = ""):
+    def editText(self, text:str, format:str = "", newline:str = None):
         # load
-        self._newline = self.autodetect_newline(text)
+        if newline is not None:
+            self._newline = newline
+        else:
+            self._newline = self.autodetect_newline(text)
         self._lines = [line.rstrip(self._newline) for line in text.splitlines()]
         self._filename = None
         self._format = format
@@ -603,7 +618,7 @@ class XEditor:
     def save(self):
         # validate format
         if not self._validateFormat():
-            self._show_error(f"Unable to save: text is not a valid {self._format}")
+            
             return False
         # encrypt if required
         text = self._newline.join(self._lines)
@@ -713,11 +728,12 @@ class XEditor:
         if self._dirty:
             filename += " *"
         header1 = f" {filename:} "
-        header2 = f" {f"{self._format}, " if self._format else ""}ln {self._cursor_y + 1}, col {self._cursor_x + 1}, lines {len(self._lines)}, Help ^H, {"INS" if self._insert else "OVR"} {self._encoding} {self._newline.replace('\n','LF').replace('\r','CR')} "
+        header2 = f" {f"{"." if self._format else ""}{self._format}, " if self._format else ""}ln {self._cursor_y + 1}, col {self._cursor_x + 1}, lines {len(self._lines)}, Help ^H, {"INS" if self._insert else "OVR"} {self._encoding} {self._newline.replace('\n','LF').replace('\r','CR')} "
         header = header1 + (" " * (self._cols - len(header1) - len(header2) - 1)) + header2  
         # message
         if message != None:
-            header = " " + message
+            header = " " + message + (" " * (self._cols - len(message) - 2))
+
         # print
         self._stdout.write(Sequences.CURSOR_HIDE)
         self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1,1))
@@ -842,7 +858,8 @@ class XEditor:
         return result
 
     def _show_error(self, message: str) -> str:
-        self._printHeader(message = message + " (press any key to continue)")
+        self._printHeader(message = message )
+        self._printCursor()
 
     def _colorizeLine(self, line, index):
         if self._select_x != None:
@@ -880,16 +897,59 @@ class XEditor:
     
     def _validateFormat(self):
         if self._format == "json":
+            # json
             text = self._newline.join(self._lines)
             try:
                 json.loads(text)
                 return True  
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                self._show_error(f"Invalid json: {e}")
+                return False 
+        elif self._format == "jsonc":
+            # jsonc
+            text = self._newline.join(self._lines)
+            try:
+                json5.loads(text)
+                return True  
+            except Exception as e:
+                self._show_error(f"Invalid jsonc: {e}")
                 return False 
         elif self._format == "password":
+            # password
             text = self._newline.join(self._lines)
             if text.strip() == "":
+                self._show_error(f"Invalid password: password cannot be empty")
                 return False
+        elif self._format == "env":
+            # env
+            for line in self._lines:
+                if line.strip() == "" or line.strip().startswith("#"):
+                    continue
+                elif "=" not in line:
+                    self._show_error(f"Invalid env: missing = in line '{line}'")
+                    return False
+        elif self._format == "xml":
+            # xml
+            text = self._newline.join(self._lines)
+            try:
+                xml.etree.ElementTree.fromstring(text)
+                return True
+            except ET.ParseError as e:
+                self._show_error(f"Invalid xml: {e}")
+                return False
+        elif self._format == "yaml" or self._format == "yml":
+            # yaml
+            text = self._newline.join(self._lines)
+            try:
+                yaml.safe_load(text)
+                return True
+            except yaml.YAMLError as e:
+                self._show_error(f"Invalid yaml: {e}")
+                return False
+        elif self._format == "md":
+            # md
+            text = self._newline.join(self._lines)
+            
         return True
 
     # loop                
