@@ -10,7 +10,7 @@ where = ["src"]
 
 [project]
 name = "dprojectstools"
-version = "0.0.25"
+version = "0.0.29"
 authors = [
   { name="Marc Delos", email="marcdp@dprojects.com" },
 ]
@@ -26,14 +26,15 @@ dependencies = [
     "sqlalchemy>=2.0.38",
     "websocat>=1.13.0",
     "json5>=0.13.0",
-    "PyYAML>=6.0.3"
+    "PyYAML>=6.0.3",
+    "pyodbc>=5.2.0"
 ]
 description = "A set of development tools"
 readme = "README.md"
 requires-python = ">=3.8"
+license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 

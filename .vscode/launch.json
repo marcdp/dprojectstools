@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: xedit",
+            "type": "debugpy",
+            "request": "launch",
+            "console": "externalTerminal",
+            "module": "dprojectstools.xeditor",
+            "args": ["README.md"] 
+        }
+    ]
+}

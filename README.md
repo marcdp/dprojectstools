@@ -2,16 +2,15 @@
 # dprojectstools
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![PyPI](https://img.shields.io/pypi/v/dprojectstools)
 
 A practical toolbox of small **developer-focused utilities** for everyday work in terminals and scripts.
 
-This repository groups together a set of command-line tools and helper modules I use across projects: quick math on the CLI, clipboard helpers, backup wrappers (Restic), console/TUI utilities, i18n helpers, and a lightweight command-line “manager” to speed up building CLI apps.
+This repository groups together a set of command-line tools and helper modules I use across projects: quick math on the CLI, clipboard helpers, backup wrappers (Restic), console/TUI utilities, i18n helpers, and a lightweight command-line “manager” to speed up building CLI apps. `asdasdas`
 
 > Opinionated, lightweight, and meant to be useful in real workflows.
-
----
 
 ## What’s inside
 
@@ -49,7 +48,7 @@ cd dprojectstools
 - Prefer small, composable tools.
 - Keep commands script-friendly (exit codes, stdout/stderr discipline).
 - Minimal dependencies where possible.
-- Built to support repeatable workflows across machines.
+- Built to support repeatable workflows across machines
 
 ## License
 

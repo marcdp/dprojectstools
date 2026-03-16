@@ -1,3 +1,4 @@
+import re
 from ..console import Sequences, Keys, readKey
 from ..crypto import aes_decrypt, aes_encrypt
 from ..clipboard import copy
@@ -7,12 +8,25 @@ import getpass
 import json
 import json5
 import yaml
+from datetime import datetime, timezone
+from dataclasses import dataclass, field
+from .hightlight_none import  hightlight_none
+from .hightlight_env import  hightlight_env
+from .hightlight_md import  hightlight_md
+from .hightlight_json import  hightlight_json
 
-# read correctly ESCAPE sequence key in linux
-# undo + redo
 
 # constants
 TAB_SPACES = 4
+
+# class
+@dataclass(slots=True)
+class HistoryEntry:
+    cursor_x: int = 0
+    cursor_y: int = 0
+    inserted: str = ""
+    deleted: str = ""
+
 
 # class
 class XEditor:
@@ -27,15 +41,23 @@ class XEditor:
         self._dirty = False
         self._encoding = "utf-8"
         self._lines = []
+        self._readonly = False
         self._stop = False
         self._newline = os.linesep
         self._password = None
         self._format = ""
         self._use_buffers = True
         self._result = None
+        self._keyword = None
+        self._use_quit_escape = False
+        self._title = None
+        self._line_hightlight = True
+        self._undo_stack = []
+        self._redo_stack = []
         # cursor
         self._cursor_x = 0
         self._cursor_y = 0
+        self._cursor_y_prev = 0
         # offset
         self._offset_x = 0
         self._offset_y = 0
@@ -71,7 +93,7 @@ class XEditor:
         try:
             self.load(filename)
         except ValueError as e:
-            print("error: invalid password")
+            print("error: " + str(e))
             return False
         # dump
         if dump:
@@ -93,15 +115,21 @@ class XEditor:
         # return
         return True
 
-    def editText(self, text:str, format:str = "", newline:str = None):
+    def editText(self, text:str, format:str = "", newline:str = None, readonly: bool = False, use_quit_escape: bool = False, title: str = None, use_buffers: bool = True):
         # load
         if newline is not None:
             self._newline = newline
         else:
             self._newline = self.autodetect_newline(text)
-        self._lines = [line.rstrip(self._newline) for line in text.splitlines()]
+        self._lines = [line for line in text.splitlines()]
+        if text.endswith("\n"):
+            self._lines.append("")
         self._filename = None
         self._format = format
+        self._readonly = readonly
+        self._title = title
+        self._use_buffers = use_buffers
+        self._use_quit_escape = use_quit_escape
         # loop
         try:
             # buffer alternate
@@ -275,14 +303,12 @@ class XEditor:
 
     def scrollTop(self):
         # scroll top
-        self._cursor_y = 0
-        self._setCursor(self._cursor_x, self._cursor_y);
+        self._setCursor(self._cursor_x, 0);
         self._printCursor()
 
     def scrollBottom(self):
         # scroll bottom
-        self._cursor_y = len(self._lines) - 1
-        self._setCursor(self._cursor_x, self._cursor_y);
+        self._setCursor(self._cursor_x, len(self._lines) - 1);
         self._printCursor()
 
     def keypress(self, key):
@@ -293,10 +319,14 @@ class XEditor:
         elif len(key)==1 and ord(key[0]) < 32:
             print("UNHANDLED KEY: ", ord(key[0]))
             return
-        self._dirty = True
-        if self._select_x != None:
+        
+        if self._readonly:
+            pass
+        elif self._select_x != None:
+            self._dirty = True
             self.setSelectedText(key)
         elif self._insert:
+            self._dirty = True
             line = self._lines[self._cursor_y]
             line = line[:self._cursor_x] + key + line[self._cursor_x:]
             self._lines[self._cursor_y] = line            
@@ -304,20 +334,43 @@ class XEditor:
             self._printHeader(flush = False)            
             self._printLine(self._cursor_y, flush = False)
             self._printCursor()
+
+            # add to undo stack
+            self._undo_stack.append(HistoryEntry(
+                cursor_x = self._cursor_x - 1,
+                cursor_y = self._cursor_y,
+                inserted = key,
+            ))
+            self._redo_stack.clear()
+
         else:
+            self._dirty = True
             line = self._lines[self._cursor_y]
+            deleted = line[self._cursor_x:self._cursor_x + 1]
             line = line[:self._cursor_x] + key + line[self._cursor_x + 1:]
             self._lines[self._cursor_y] = line            
             self._setCursor(self._cursor_x + 1, self._cursor_y)
             self._printHeader(flush = False)
             self._printLine(self._cursor_y)        
+
+            # add to undo stack
+            self._undo_stack.append(HistoryEntry(
+                cursor_x = self._cursor_x - 1,
+                cursor_y = self._cursor_y,
+                deleted = deleted,
+                inserted = key,
+            ))
+            self._redo_stack.clear()
     
     def enter(self):
         # enter
-        self._dirty = True
-        if self._select_x != None:
+        if self._readonly:
+            pass
+        elif self._select_x != None:
+            self._dirty = True
             self.setSelectedText("\n")
         else:
+            self._dirty = True
             line = self._lines[self._cursor_y]
             line_before = line[:self._cursor_x]
             line_after = line[self._cursor_x:]
@@ -330,7 +383,9 @@ class XEditor:
         
     def tab(self):
         # tab
-        if self._select_x == None:
+        if self._readonly:
+            pass
+        elif self._select_x == None:
             # nothing selected, insert spaces
             spaces = " " * (TAB_SPACES - (self._cursor_x % TAB_SPACES))
             self.insertText(spaces)
@@ -371,7 +426,9 @@ class XEditor:
     def untab(self):
         # untab
         spaces = " " * TAB_SPACES
-        if self._select_x == None or self._select_y == self._cursor_y:
+        if self._readonly:
+            pass
+        elif self._select_x == None or self._select_y == self._cursor_y:
             # nothing selected
             line = self._lines[self._cursor_y]
             if line.startswith(spaces):
@@ -409,7 +466,9 @@ class XEditor:
     def backspace(self):
         # backspace
         line = self._lines[self._cursor_y]
-        if self._select_x != None:
+        if self._readonly:
+            pass
+        elif self._select_x != None:
             self.setSelectedText("")
         elif self._cursor_x == 0:
             if self._cursor_y > 0:
@@ -433,7 +492,9 @@ class XEditor:
     def delete(self):
         # delete
         line = self._lines[self._cursor_y]
-        if self._select_x != None:
+        if self._readonly:
+            pass
+        elif self._select_x != None:
             self.setSelectedText("")
         elif self._cursor_x == len(line):
             if self._cursor_y < len(self._lines) - 1:
@@ -459,7 +520,8 @@ class XEditor:
 
     def escape(self):
         # escape
-        pass
+        if self._use_quit_escape:
+            self.quit()
 
     def snapshot(self):
         # snapshot changes between the last iteration
@@ -467,11 +529,114 @@ class XEditor:
 
     def undo(self):
         # undo
-        pass
+        if self._undo_stack:
+            # pop from undo stack
+            entry = self._undo_stack.pop()
+            # apply edit
+            line = self._lines[entry.cursor_y]
+            if entry.deleted:
+                line = line[:entry.cursor_x] + entry.deleted + line[entry.cursor_x + len(entry.deleted):]
+                self._cursor_x = entry.cursor_x
+                self._cursor_y = entry.cursor_y
+            elif entry.inserted:
+                line = line[:entry.cursor_x] + line[entry.cursor_x + len(entry.inserted):]
+                self._cursor_x = entry.cursor_x
+                self._cursor_y = entry.cursor_y
+            self._lines[entry.cursor_y] = line
+            self._printLine(entry.cursor_y)
+            # push to redo_stack
+            self._redo_stack.append(entry)
 
     def redo(self):
         # redo
-        pass
+        if self._redo_stack:
+            # pop from redo stack
+            entry = self._redo_stack.pop()
+            # apply reverse edit
+            pass
+            # push to undo_stack
+            self._undo_stack.append(entry)
+
+    def goto(self):
+        number = self._question("Go to line:")
+        if number != None:
+            try:
+                line = int(number)
+                self._setCursor(self._cursor_x, line - 1)
+            except ValueError:
+                pass
+
+    def find(self, previous = False):
+        # find
+        keyword = self._question("Find:")
+        if keyword:
+            self._keyword = keyword
+            if previous:
+                self.findPrevious()
+            else:
+                self.findNext()
+
+    def findNext(self, from_start = False):
+        # find next occurrence of keyword
+        if from_start:
+            y = 0
+        else:
+            y = self._cursor_y
+        found = False
+        while y < len(self._lines):
+            line = self._lines[y]
+            if y == self._cursor_y and not from_start:
+                x = line.find(self._keyword, self._cursor_x + 1)
+            else:
+                x = line.find(self._keyword)
+            if x >= 0:
+                self._setSelect(False)
+                self._printLine(y)
+                self._setCursor(x, y)
+                self._select_y = y
+                self._select_x = x + len(self._keyword)
+                self._printLine(y)
+                found = True
+                break
+            y += 1
+        if not found:
+            # if not found, then check if found before cursor
+            for line in self._lines:
+                x = line.find(self._keyword)
+                if x >= 0:
+                    self.findNext(True)
+                    break
+
+    def findPrevious(self, from_bottom = False):
+        # find previous occurrence of keyword
+        if from_bottom:
+            y = len(self._lines) - 1
+        else:
+            y = self._cursor_y
+        found = False
+        while y >= 0:
+            line = self._lines[y]
+            if y == self._cursor_y and not from_bottom:
+                x = line.rfind(self._keyword, 0, self._cursor_x)
+            else:
+                x = line.rfind(self._keyword)
+            if x >= 0:
+                self._setSelect(False)
+                self._printLine(y)
+                self._setCursor(x, y)
+                self._select_y = y
+                self._select_x = x + len(self._keyword)
+                self._printLine(y)
+                found = True
+                break
+            y -= 1
+        if not found:
+            # if not found, then check if found before cursor
+            for line in self._lines:
+                x = line.rfind(self._keyword)
+                if x >= 0:
+                    self.findPrevious(True)
+                    break
 
     def insertText(self, text, x = None, y = None):
         # print
@@ -582,7 +747,37 @@ class XEditor:
 
     def help(self):
         # help
-        pass
+        help = """ 
+  XEditor - a simple terminal text editor
+
+  Cursor movement
+    Arrows              Move cursor
+    Home / End          Move to beginning / end of line
+    PageUp / PageDown   Move one page up / down
+    Ctrl+Arrows         Move cursor by word
+    Ctrl+G              Go to line
+  Indentation
+    Tab                 Indent
+    Untab               Unindent
+    Ctrl+Tab            Indent as a block
+    Ctrl+Untab          Unindent as a block
+  Selection
+    Ctrl+A              Select all
+  Editing
+    Ctrl+C              Copy
+    Ctrl+X              Cut
+    Ctrl+V              Paste
+    Ctrl+Z              Undo
+    Ctrl+Y              Redo
+  Search
+    Ctrl+F              Find
+    F3                  Find next
+    Shift+F3            Find previous
+  File
+    Ctrl+S              Save
+    Ctrl+Q              Quit
+        """
+        self._info(help)
 
     def cutAndCopy(self):
         # cut and copy
@@ -599,8 +794,9 @@ class XEditor:
         # load
         self._lines = [""]
         self._newline = os.linesep
+        self._readonly = False
         if os.path.exists(filename):
-            with open(filename,"r") as file:
+            with open(filename, "r", encoding="utf-8") as file:
                 text = file.read()
                 # decrypt
                 if self._password != None:
@@ -608,6 +804,7 @@ class XEditor:
                 # split in lines
                 self._newline = self.autodetect_newline(text)
                 self._lines = [line.rstrip(self._newline) for line in text.splitlines()]
+            self._readonly = not os.access(filename, os.W_OK)
         self._filename = filename
         self._dirty = False
         self._offset_x = 0
@@ -628,7 +825,7 @@ class XEditor:
         if self._filename == None:
             self._result = self._newline.join(self._lines)
         else:
-            with open(self._filename,"w") as file:
+            with open(self._filename,"w", encoding="utf-8") as file:
                 file.write(text)
         # print
         self._dirty = False
@@ -701,6 +898,11 @@ class XEditor:
 
         self._printHeader(flush = False)
         self._printCursor()
+
+        if self._line_hightlight and self._cursor_y_prev != self._cursor_y:
+            self._printLine(self._cursor_y_prev)
+            self._printLine(self._cursor_y)
+        self._cursor_y_prev = self._cursor_y
     
     def autodetect_newline(self, text: str) -> str:
         result = os.linesep
@@ -725,18 +927,24 @@ class XEditor:
             filename = self._filename 
         else: 
             filename = "<none>"
+        if self._readonly:
+            filename += " [RO]"
+        if self._title == None:
+            header1 = f" {filename:} "
+        else:
+            header1 = f" {self._title} "
         if self._dirty:
-            filename += " *"
-        header1 = f" {filename:} "
-        header2 = f" {f"{"." if self._format else ""}{self._format}, " if self._format else ""}ln {self._cursor_y + 1}, col {self._cursor_x + 1}, lines {len(self._lines)}, Help ^H, {"INS" if self._insert else "OVR"} {self._encoding} {self._newline.replace('\n','LF').replace('\r','CR')} "
-        header = header1 + (" " * (self._cols - len(header1) - len(header2) - 1)) + header2  
+            header1 += "*"
+        header2 = f" {f"{self._format}, " if self._format else ""}Ln {self._cursor_y + 1}/{len(self._lines)}, Col {self._cursor_x + 1}, {"INS" if self._insert else "OVR"}, {self._encoding}, {self._newline.replace('\n','LF').replace('\r','CR')} "
+        header = header1 + (" " * (self._cols - len(header1) - len(header2) )) + header2  
         # message
         if message != None:
             header = " " + message + (" " * (self._cols - len(message) - 2))
 
         # print
         self._stdout.write(Sequences.CURSOR_HIDE)
-        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1,1))
+        
+        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1))
         self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
         self._stdout.write(header)
         self._stdout.write(Sequences.RESET)
@@ -750,7 +958,10 @@ class XEditor:
             self._stdout.flush()
 
     def _printLine(self, index, flush = True):
-        line = self._lines[self._cursor_y].replace('\t', "    ")
+        if index >= len(self._lines):
+            line = ""
+        else:
+            line = self._lines[index].replace('\t', "    ")
         if len(line) <= self._offset_x:
             line = ""
         else:
@@ -761,7 +972,7 @@ class XEditor:
         line_len = len(line)
 
         self._stdout.write(Sequences.CURSOR_HIDE)
-        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1 + 1 + self._cursor_y - self._offset_y))
+        self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1 + 1 + index - self._offset_y))
 
         # selected
         if self._select_x != None:
@@ -769,9 +980,17 @@ class XEditor:
 
         if line_len < self._cols:
             line += " " * (self._cols - line_len)
-        if self._cursor_y == self._rows - 1 - 1:
+        if index == self._rows - 1:
             line = line[:line_len - 1]
+        
+        # highlight
+        line = self._hightlight(line)
+        
+        # current line hightlight
+        if index == self._cursor_y:
+            line = Sequences.bg_color_fromrgb("#222222") + line + Sequences.RESET
 
+        # print
         self._stdout.write(line)
         self._stdout.write(Sequences.CURSOR_SHOW)
         self._printCursor(flush = flush)
@@ -811,18 +1030,31 @@ class XEditor:
             # write 
             if y == self._rows - 1 - 1:
                 line = line[:len(line) - 1]
+
+            # hightlight
+            line = self._hightlight(line)  
+
+            # current line hightlight
+            if y == self._cursor_y:
+                line = Sequences.bg_color_fromrgb("#222222") + line + Sequences.RESET
+
             # write line
             self._stdout.write(line)
+
         self._printCursor(flush = False)
         self._stdout.write(Sequences.CURSOR_SHOW)
         if flush:
             self._stdout.flush()
 
+    def _info(self, message: str) -> str:
+        editor = XEditor()
+        editor.editText(message, format = "md", readonly = True, use_quit_escape = True, title = "Help: press ESC to quit", use_buffers = False)
+        self._printAll()        
+    
     def _question(self, message: str) -> str:
         self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
         self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1))
         self._stdout.write(" " * self._cols)
-
         self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1))
         self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
         result = None
@@ -837,7 +1069,7 @@ class XEditor:
     def _questionYesNo(self, message: str) -> str:
         self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
         self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1))
-        self._stdout.write(" " * self._cols)
+        self._stdout.write(" " * (self._cols - 1))
         self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1))
         self._stdout.write(Sequences.BG_WHITE + Sequences.FG_BLACK)
         result = None
@@ -845,8 +1077,10 @@ class XEditor:
         key = ""
         while True:
             key = readKey()
-            print(key)
             if key == Keys.CTRL_C:
+                result = None
+                break
+            if key == Keys.ESCAPE:
                 result = None
                 break
             key = key.lower()
@@ -864,6 +1098,7 @@ class XEditor:
     def _colorizeLine(self, line, index):
         if self._select_x != None:
             bg_color = Sequences.BG_BLUE
+            bg_color = Sequences.bg_color_fromrgb("#444444")
             reset = Sequences.RESET
             x1 = self._select_x - self._offset_x
             y1 = self._select_y
@@ -956,6 +1191,15 @@ class XEditor:
     def _loop(self):
         # clear
         self._clear()
+        # highlighter
+        if self._format == "env":
+            self._hightlight = hightlight_env
+        elif self._format == "md":
+            self._hightlight = hightlight_md
+        elif self._format == "json" or self._format == "jsonc":
+            self._hightlight = hightlight_json
+        else:
+            self._hightlight = hightlight_none
         # set cursor style
         self._stdout.write(Sequences.CURSOR_SHAPE_BLINKING_BLOCK)
         # prepare
@@ -964,8 +1208,8 @@ class XEditor:
         # loop
         while not self._stop:
             # read key
-            key = readKey()
-            
+            key = readKey()            
+
             # check for size changed
             current_size = os.get_terminal_size()            
             if self._rows != current_size.lines or self._cols != current_size.columns:
@@ -987,6 +1231,25 @@ class XEditor:
                 self.undo()
             elif key == Keys.CTRL_Y:
                 self.redo()
+            elif key == Keys.CTRL_F:
+                self.find()
+            elif key == Keys.CTRL_G:
+                self.goto()
+            elif key == Keys.F1:
+                self.help()
+            elif key == Keys.F2:
+                pass
+            elif key == Keys.F3:
+                if self._keyword != None:
+                    self.findNext()
+                else:
+                    self.find()
+            elif key == Keys.SHIFT_F3:
+                if self._keyword != None:
+                    self.findPrevious()
+                else:
+                    self.find(True)
+
             # arrows
             elif key == Keys.RIGHT_ARROW:
                 self.right()
@@ -1037,7 +1300,6 @@ class XEditor:
                 self.home(True)
             elif key == Keys.SHIFT_END_ARROW:
                 self.end(True)
-
             elif key == Keys.CTRL_SHIFT_RIGHT_ARROW:
                 self.rightWord(True)
             elif key == Keys.CTRL_SHIFT_LEFT_ARROW:
@@ -1066,5 +1328,4 @@ class XEditor:
             # keypress
             else:
                 self.keypress(key)
-
 

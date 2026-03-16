@@ -74,3 +74,27 @@ class Sequences:
     BUFFER_MAIN = "\033[?1049l"
     BUFFER_ALTERNATE = "\033[?1049h"
     
+    def fg_color_fromrgb(color: str) -> str:
+        color = color.strip()
+        if not color.startswith("#") or len(color) != 7:
+            raise ValueError("color must be in format '#RRGGBB'")
+        try:
+            r = int(color[1:3], 16)
+            g = int(color[3:5], 16)
+            b = int(color[5:7], 16)
+        except ValueError as e:
+            raise ValueError("color must contain valid hexadecimal digits") from e
+
+        return f"\x1b[38;2;{r};{g};{b}m"
+    
+    def bg_color_fromrgb(color: str) -> str:
+        color = color.strip()
+        if not color.startswith("#") or len(color) != 7:
+            raise ValueError("color must be in format '#RRGGBB'")
+        try:
+            r = int(color[1:3], 16)
+            g = int(color[3:5], 16)
+            b = int(color[5:7], 16)
+        except ValueError as e:
+            raise ValueError("color must contain valid hexadecimal digits") from e
+        return f"\x1b[48;2;{r};{g};{b}m"

@@ -81,6 +81,7 @@ class Restic:
             iexclude: Annotated[list[str], "Include"] = None,
             verify = False,
             delete = False,
+            verbose = False,
             no_same_owner = False,
             no_same_permissions = False
         ):
@@ -101,6 +102,8 @@ class Restic:
             command += " --verify"
         if delete:
             command += " --delete"
+        if verbose:
+            command += " --verbose"
         if iexclude != None:
             for iexclude in iexclude:
                 command += " --iexclude " + iexclude
