@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Database schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tables"],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "collation": {
+      "type": "string"
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "columns"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "dataType"],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "dataType": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "isAutoincrement": {
+                  "type": "boolean"
+                },
+                "null": {
+                  "type": "boolean"
+                },
+                "precision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "scale": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "collation": {
+                  "type": "string"
+                },
+                "default": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "primaryKey": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "columns"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "columns": {
+                "type": "string"
+              }
+            }
+          },
+          "foreignKeys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "columns", "refTable", "refColumns"],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "columns": {
+                  "type": "string"
+                },
+                "refTable": {
+                  "type": "string"
+                },
+                "refColumns": {
+                  "type": "string"
+                },
+                "onDelete": {
+                  "type": "string"
+                },
+                "onUpdate": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "indexes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "columns"],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "unique": {
+                  "type": "boolean"
+                },
+                "columns": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "records": {
+            "type": "array"
+          }
+        }
+      }
+    },
+    "views": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "content"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "procedures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "arguments", "content"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "dataType", "direction"],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "dataType": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "precision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "scale": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "null": {
+                  "type": "boolean"
+                },
+                "direction": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sequences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "initValue", "incrementBy"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "initValue": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "incrementBy": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "scripts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "content"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

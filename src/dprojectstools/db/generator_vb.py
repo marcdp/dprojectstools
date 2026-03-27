@@ -3,6 +3,7 @@ import locale
 from datetime import datetime
 from .db_schema import Schema, Column, Table, Index, DataType, Procedure
 from .generator_xml import GeneratorXml
+import fnmatch
 
 def column_to_net_type(column: Column):
     result = ""
@@ -191,19 +192,21 @@ def get_table_columns_by(table: Table, column_names: list[str]):
 def case_insensitive_replace(text, old, new):
     return re.sub(re.escape(old), new, text, flags=re.IGNORECASE)
 
-def to_property_name(column_name):
+def to_property_name(column_name: str, column_case: str = ""):
     if column_name.lower().startswith("set_"):
         column_name = re.sub(re.escape("SET_"), "SET__", column_name, flags=re.IGNORECASE)    
+    if column_case == "pascal":
+        column_name = snake_to_camel(column_name)
     return column_name
 
-def get_columns_as_method_parameters(table: Table, column_names: list[str]):
+def get_columns_as_method_parameters(table: Table, column_names: list[str], column_case: str = ""):
     result = ""
     index = 0
     for column_name in column_names:
         column = get_table_column(table, column_name)
         if column != None:
             column_net_type = column_to_net_type(column)                
-            column_name = to_property_name(column.name)                    
+            column_name = to_property_name(column.name, column_case)                    
             if index > 0:
                 result += ", "
             result += column_name + " As " + column_net_type
@@ -222,34 +225,37 @@ def get_columns_as_method_parameters_array(table: Table, column_names: list[str]
             index += 1
         pass
     return result
-def get_columns_as_object_array_parameters(table: Table, column_names: list[str]):
+def get_columns_as_object_array_parameters(table: Table, column_names: list[str], column_case: str = ""):
     result = ""
     index = 0
     for column_name in column_names:
         column = get_table_column(table, column_name)
         if column != None:
-            column_name = to_property_name(column.name)                    
+            column_name = to_property_name(column.name, column_case).strip()                    
             if index > 0:
                 result += ", "
             result += column_name
             index += 1
-    return result
-def get_columns_as_object_array_parameters_instance(table: Table, column_names: list[str]):
+    return result.strip()
+def get_columns_as_object_array_parameters_instance(table: Table, column_names: list[str], column_case: str):
     result = ""
     index = 0
     for column_name in column_names:
         column = get_table_column(table, column_name)
         if column != None:
-            column_name = to_property_name(column.name)                    
+            column_name = to_property_name(column.name, column_case)                    
             if index > 0:
                 result += ", "
             result += "objInstance." + column_name
             index += 1
     return result
 
-def snake_to_camel(snake_str: str):
-    parts = ("_" + snake_str).split('_')
-    return ''.join(word.capitalize() for word in parts[1:])
+def snake_to_camel(value: str, avoid_consecutive_upper: bool = False) -> str:
+    if avoid_consecutive_upper:
+        return "".join(part.capitalize() for part in value.split("_") if part)
+    else:
+        parts = [part for part in value.split("_") if part]
+        return "".join(part[:1].upper() + part[1:] for part in parts)
 
 def get_columns_as_sql_where(table: Table, columns: list[str], include_table_name:bool = False):
     result = []
@@ -259,24 +265,25 @@ def get_columns_as_sql_where(table: Table, columns: list[str], include_table_nam
             result.append(f"{table.name + "." if include_table_name else ""}{column.name} = ? ")
     return " AND ".join(result)
 
-def get_columns_if_confition_nothing(table: Table, columns: list[str], require_space_when_null):
+def get_columns_if_confition_nothing(table: Table, columns: list[str], require_space_when_null, column_case: str = ""):
     result = ""
     index = 0
     for column_name in columns:
         column = get_table_column(table, column_name)
         column_net_type = column_to_net_type(column)
+        property_name = to_property_name(column.name, column_case)
         if index > 0:
             result += " Or "
         if column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64":
-            result += "objInstance." + column_name + " = 0"
+            result += "objInstance." + property_name + " = 0"
         elif column_net_type == "Decimal":
-            result += "objInstance." + column_name + " = 0"
+            result += "objInstance." + property_name + " = 0"
         elif column_net_type == "Char" and require_space_when_null and not column.null:
-            result += "objInstance." + column_name + " = \" \"c"
+            result += "objInstance." + property_name + " = \" \"c"
         elif column_net_type == "DateTime":
-            result += "objInstance." + column_name + " = CDate(Nothing)"
+            result += "objInstance." + property_name + " = CDate(Nothing)"
         else:
-            result += "objInstance." + column_name + " Is Nothing"
+            result += "objInstance." + property_name + " Is Nothing"
         index += 1
     return result
 
@@ -314,10 +321,17 @@ class GeneratorVbV1():
         name = self._settings.get("name", "") or "DBContext"
         clss = self._settings.get("clss", "") or "DBContext"
         tables = self._settings.get("tables") or []
+        if isinstance(tables, str):
+            tables = [tables]
         views = self._settings.get("views") or []
+        if isinstance(views, str):
+            views = [views]
         procedures = self._settings.get("procedures") or []
+        if isinstance(procedures, str):
+            procedures = [procedures]
         connection = self._settings.get("connection", "")
         namespace = self._settings.get("namespace", "MyNamespace")
+        columns_case = self._settings.get("columns_case", "")
         xml = GeneratorXml.create(self._schema).generate()
         require_space_when_null = ("GIET" in connection)
         code = []
@@ -347,17 +361,20 @@ class GeneratorVbV1():
         code.append(f"#Region \"VO + DAL Autogenerated\"")
         # VOs
         locale.setlocale(locale.LC_COLLATE, 'en_US.UTF-8')
-        #locale.setlocale(locale.LC_ALL, 'C')
         code.append(f"        'ValueObjects")
-        #for table in sorted(self._schema.tables, key=lambda table: table.name.lower()):
         for table in sorted(self._schema.tables, key=lambda table: locale.strxfrm(table.name.upper())):
-            if not table.name in tables:
+            table_valid = False
+            for pattern in tables:
+                if fnmatch.fnmatch(table.name.lower(), pattern.lower()):
+                    table_valid = True
+                    break
+            if not table_valid:
                 continue
             code.append(f"        Public Class {table.name}VO")
             code.append(f"            Inherits DProjects.Cett.Classes.ValueObject")
             for column in table.columns:
                 column_net_type = column_to_net_type(column)                
-                column_name = to_property_name(column.name)
+                column_name = to_property_name(column.name, columns_case)
                 property_name = column_name
                 if property_name == "ALIAS":
                     property_name = "[ALIAS]"
@@ -375,7 +392,7 @@ class GeneratorVbV1():
             for column in table.columns:
                 defaultValue = ""
                 column_net_type = column_to_net_type(column)                
-                column_name = to_property_name(column.name)
+                column_name = to_property_name(column.name, columns_case)
                 if column.default == None:
                     if column.null:
                         defaultValue = "Nothing"
@@ -391,7 +408,9 @@ class GeneratorVbV1():
                     else:
                         if column_net_type == "Int64" or column_net_type == "Int32" or column_net_type == "Int16" or column_net_type == "Int8":
                             defaultValue = "0"
-                        elif column_net_type == "Single" or column_net_type == "Double" or column_net_type == "Decimal":
+                        elif column_net_type == "Decimal":
+                            defaultValue = "CDec(0.0)"
+                        elif column_net_type == "Single" or column_net_type == "Double":
                             defaultValue = "0.0"
                         elif column_net_type == "String":
                             defaultValue = "\"\""
@@ -399,13 +418,28 @@ class GeneratorVbV1():
                             defaultValue = "CDate(Date.Now)"
                         elif column_net_type == "Char":
                             defaultValue = "\" \"c"
+                        elif column_net_type == "Boolean":
+                            defaultValue = "False"
                         else:
                             defaultValue = "Nothing"
                 else:
                     defaultValue = column.default
-                    if column.default.startswith("'"):
+                    if column_net_type == "Boolean":
+                        if column.default == "0":
+                            defaultValue = "False"
+                        elif column.default == "1":
+                            defaultValue = "False"
+                        elif column.default:
+                            defaultValue = f"CBool({column.default})"
+                        else:
+                            defaultValue = "False"
+                    elif column.default == "now":
+                        defaultValue = "Date.Now"
+                    elif column.default.startswith("'"):
                         defaultValue = column.default.strip().replace("'","\"")
                         if column.size == 1:
+                            if defaultValue == "\"\"":
+                                defaultValue = "\" \""
                             defaultValue += "c"
 
                 code.append(f"                Me.{column_name} = {defaultValue}")
@@ -417,7 +451,7 @@ class GeneratorVbV1():
                 code.append(f"                Me.Path = \"/{table.name}\" & CStr(objDataRow(\"{column_name}\"))")
             for column in table.columns:
                 column_net_type = column_to_net_type(column)                
-                column_name = to_property_name(column.name)
+                column_name = to_property_name(column.name, columns_case)
                 if column.null:
                     code.append(f"                If objDataRow.IsNull(\"{column.name}\") Then")
                     code.append(f"                    Me.{column_name} = Nothing")
@@ -440,13 +474,13 @@ class GeneratorVbV1():
             code.append(f"                If objInstance Is Nothing Then Return False")
             for column in table.columns:
                 column_net_type = column_to_net_type(column)
-                column_name = to_property_name(column.name)
+                column_name = to_property_name(column.name, columns_case)
                 if column_net_type == "String":
                     code.append(f"                If Not (\"\" & Me.{column_name}).Equals(objInstance.{column_name}, StringComparison.Ordinal) Then")
                 else:
                     code.append(f"                If Me.{column_name} <> objInstance.{column_name} Then")
                 code.append(f"                    If differencesSB.Length <> 0 Then differencesSB.Append(\",\")")
-                code.append(f"                    differencesSB.Append(\"{column.name}\")")
+                code.append(f"                    differencesSB.Append(\"{to_property_name(column.name, columns_case)}\")")
                 code.append(f"                    result = False")
                 code.append(f"                End If")
             code.append(f"                differences = differencesSB.ToString()")
@@ -455,8 +489,13 @@ class GeneratorVbV1():
             code.append(f"        End Class")
 
         # Methods
-        for table in self._schema.tables:
-            if not table.name in tables:
+        for table in sorted(self._schema.tables, key=lambda table: locale.strxfrm(table.name.upper())):
+            table_valid = False
+            for pattern in tables:
+                if fnmatch.fnmatch(table.name.lower(), pattern.lower()):
+                    table_valid = True
+                    break
+            if not table_valid:
                 continue
             code.append(f"        '{table.name}")
             code.append(f"        <Description(\"Selects rows of data by filter from table '{table.name}'\")>")
@@ -475,7 +514,7 @@ class GeneratorVbV1():
             column_index = 0
             for column_name in table.primary_key.columns:
                 code.append(f"            filter.Append(\"{" AND " if column_index > 0 else ""} {column_name} = ? \")")
-                code.append(f"            filterValues.Add(objInstance.{column_name})")
+                code.append(f"            filterValues.Add(objInstance.{to_property_name(column_name, columns_case)})")
                 column_index += 1
             code.append(f"            Dim result As {table.name}VO() = {table.name}_SelectByFilter(filter.ToString(), filterValues.ToArray(), \"\")")
             code.append(f"            If result.Length = 0 Then Return Nothing")
@@ -622,29 +661,29 @@ class GeneratorVbV1():
                 code.append(f"            Return {table.name}_SelectByFilter(filterExpression.ToString(), New Object() {{}}, orderby)")
                 code.append(f"        End Function")
             # SelectBy by FK
-            for fk in table.foreign_keys:
-                fkname = snake_to_camel(fk.name).replace("$","")
-                code.append(f"        <Description(\"Selects rows by foreign key '{snake_to_camel(fk.name)}' from table '{table.name}'\")>")
-                code.append(f"        Public Overloads Function {table.name}_SelectBy{fkname}({get_columns_as_method_parameters(table, fk.columns)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {table.name}VO()")
+            for fk in sorted(table.foreign_keys, key=lambda fk: locale.strxfrm(fk.name.upper())):
+                fkname = snake_to_camel(fk.name, True).replace("$","")
+                code.append(f"        <Description(\"Selects rows by foreign key '{fkname}' from table '{table.name}'\")>")
+                code.append(f"        Public Overloads Function {table.name}_SelectBy{fkname}({get_columns_as_method_parameters(table, fk.columns, columns_case)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {table.name}VO()")
                 code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, fk.columns)}\"")
-                code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, fk.columns)}}}")
+                code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, fk.columns, columns_case)}}}")
                 code.append(f"            Return {table.name}_SelectByFilter(filterExpression, filterValues, orderby, startIndex, length)")
                 code.append(f"        End Function")
             # SelectBy by FK
-            for fk in table.foreign_keys:
-                fkname = snake_to_camel(fk.name).replace("$","")
+            for fk in sorted(table.foreign_keys, key=lambda fk: locale.strxfrm(fk.name.upper())):
+                fkname = snake_to_camel(fk.name, True).replace("$","")
                 target_column_name = ""
                 target_column_net_type = ""
                 for column_name in fk.columns:
                     column = get_table_column(table, column_name)
                     target_column_name = column.name
                     target_column_net_type = column_to_net_type(column)
-                code.append(f"        <Description(\"Selects rows by foreign key '{snake_to_camel(fk.name)}' from table '{table.name}'\")>")
-                code.append(f"        Public Overloads Function {table.name}_SelectBy{fkname}({snake_to_camel(target_column_name)}Array As {target_column_net_type}(), Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {table.name}VO()")
+                code.append(f"        <Description(\"Selects rows by foreign key '{fkname}' from table '{table.name}'\")>")
+                code.append(f"        Public Overloads Function {table.name}_SelectBy{fkname}({snake_to_camel(target_column_name, True)}Array As {target_column_net_type}(), Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {table.name}VO()")
                 code.append(f"            Dim filterExpression As StringBuilder = New StringBuilder()")
                 code.append(f"            Dim counter As Int32 = 0")
                 code.append(f"            filterExpression.Append(\"{target_column_name} IN (\")")
-                code.append(f"            For Each id As {target_column_net_type} In {snake_to_camel(target_column_name)}Array")
+                code.append(f"            For Each id As {target_column_net_type} In {snake_to_camel(target_column_name, True)}Array")
                 code.append(f"                If counter > 0 Then filterExpression.Append(\",\")")
                 code.append(f"                filterExpression.Append(mContext.DBConnections({connection}).GetSqlEncodedValue(id, GetType({target_column_net_type}), False))")
                 code.append(f"                counter += 1")
@@ -656,12 +695,12 @@ class GeneratorVbV1():
 
             # SelectBy by INDEX
             for index in table.indexes:
-                idxname = snake_to_camel(index.name).replace("$","")
+                idxname = snake_to_camel(index.name, True).replace("$","")
                 if index.unique:                    
-                    code.append(f"        <Description(\"Selects row by index '{snake_to_camel(index.name)}' from table '{table.name}'\")>")
-                    code.append(f"        Public Function {table.name}_SelectByIndex{idxname}({get_columns_as_method_parameters(table, index.columns)}) As {table.name}VO")
+                    code.append(f"        <Description(\"Selects row by index '{idxname}' from table '{table.name}'\")>")
+                    code.append(f"        Public Function {table.name}_SelectByIndex{idxname}({get_columns_as_method_parameters(table, index.columns, columns_case)}) As {table.name}VO")
                     code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, index.columns, True)}\"")
-                    code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, index.columns)}}}")
+                    code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, index.columns, columns_case)}}}")
                     code.append(f"            Dim result As {table.name}VO() = {table.name}_SelectByFilter(filterExpression, filterValues, \"\")")
                     code.append(f"            If result.Length > 0 Then")
                     code.append(f"                Return result(0)")
@@ -676,10 +715,10 @@ class GeneratorVbV1():
                         #    column = get_table_column(table, column_name)
                         #    target_column_name = column.name
                         #    target_column_net_type = column_to_net_type(column)
-                        code.append(f"        <Description(\"Selects row id by index '{snake_to_camel(index.name)}' from table '{table.name}'\")>")
-                        code.append(f"        Public Function {table.name}_SelectIdByIndex{idxname}({get_columns_as_method_parameters(table, index.columns)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As Int32")
+                        code.append(f"        <Description(\"Selects row id by index '{idxname}' from table '{table.name}'\")>")
+                        code.append(f"        Public Function {table.name}_SelectIdByIndex{idxname}({get_columns_as_method_parameters(table, index.columns, columns_case)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As Int32")
                         code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, index.columns, True)}\"")
-                        code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, index.columns)}}}")
+                        code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, index.columns, columns_case)}}}")
                         code.append(f"            Dim result As Int32() = {table.name}_SelectIDsByFilter(filterExpression, filterValues, \"\")")
                         code.append(f"            If result.Length > 0 Then")
                         code.append(f"                Return result(0)")
@@ -689,17 +728,17 @@ class GeneratorVbV1():
                         code.append(f"        End Function")
                 else:
                     code.append(f"        <Description(\"Selects rows by index '{idxname}' from table '{table.name}'\")>")
-                    code.append(f"        Public Function {table.name}_SelectByIndex{idxname}({get_columns_as_method_parameters(table, index.columns)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {table.name}VO()")
+                    code.append(f"        Public Function {table.name}_SelectByIndex{idxname}({get_columns_as_method_parameters(table, index.columns, columns_case)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {table.name}VO()")
                     code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, index.columns, True)}\"")
-                    code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, index.columns)}}}")
+                    code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, index.columns, columns_case)}}}")
                     code.append(f"            Return {table.name}_SelectByFilter(filterExpression, filterValues, orderby, startIndex, length)")
                     code.append(f"        End Function")
             # SelectBy by Index Pk
-            pkidxname = snake_to_camel(table.primary_key.name).replace("$","")
-            code.append(f"        <Description(\"Selects row by index '{snake_to_camel(table.primary_key.name)}' from table '{table.name}'\")>")
-            code.append(f"        Public Function {table.name}_SelectByIndex{pkidxname}({get_columns_as_method_parameters(table, table.primary_key.columns)}) As {table.name}VO")
+            pkidxname = snake_to_camel(table.primary_key.name, True).replace("$","")
+            code.append(f"        <Description(\"Selects row by index '{pkidxname}' from table '{table.name}'\")>")
+            code.append(f"        Public Function {table.name}_SelectByIndex{pkidxname}({get_columns_as_method_parameters(table, table.primary_key.columns, columns_case)}) As {table.name}VO")
             code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, table.primary_key.columns, True)}\"")
-            code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, table.primary_key.columns)}}}")
+            code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, table.primary_key.columns, columns_case)}}}")
             code.append(f"            Dim result As {table.name}VO() = {table.name}_SelectByFilter(filterExpression, filterValues, \"\")")
             code.append(f"            If result.Length > 0 Then")
             code.append(f"                Return result(0)")
@@ -710,10 +749,10 @@ class GeneratorVbV1():
             if len(table.primary_key.columns) == 1:
                 column = get_table_column(table, table.primary_key.columns[0])
                 column_net_type = column_to_net_type(column)
-                code.append(f"        <Description(\"Selects row id by index '{snake_to_camel(table.primary_key.name)}' from table '{table.name}'\")>")
-                code.append(f"        Public Function {table.name}_SelectIdByIndex{pkidxname}({get_columns_as_method_parameters(table, table.primary_key.columns)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {column_net_type}")
+                code.append(f"        <Description(\"Selects row id by index '{pkidxname}' from table '{table.name}'\")>")
+                code.append(f"        Public Function {table.name}_SelectIdByIndex{pkidxname}({get_columns_as_method_parameters(table, table.primary_key.columns, columns_case)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {column_net_type}")
                 code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, table.primary_key.columns, True)}\"")
-                code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, table.primary_key.columns)}}}")
+                code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, table.primary_key.columns, columns_case)}}}")
                 code.append(f"            Dim result As {column_net_type}() = {table.name}_SelectIDsByFilter(filterExpression, filterValues, \"\")")
                 code.append(f"            If result.Length > 0 Then")
                 code.append(f"                Return result(0)")
@@ -728,7 +767,7 @@ class GeneratorVbV1():
             code.append(f"            Dim objSqlBuilder As StringBuilder")
             for column in table.columns:
                 column_net_type = column_to_net_type(column)
-                property_name = to_property_name(column.name)
+                property_name = to_property_name(column.name, columns_case)
                 if column_net_type == "String" and column.size > 0:
                     code.append(f"            If Not objInstance.{property_name} Is Nothing AndAlso objInstance.{property_name}.length > {column.size} Then objInstance.{property_name} = objInstance.{property_name}.SubString(0, {column.size})")
             code.append(f"            Dim objSqlArguments As New List(Of Object)")
@@ -737,70 +776,90 @@ class GeneratorVbV1():
             code.append(f"            objSqlBuilder.Append(\"INTO {table.name} (\")")
             index = 0
             for column in table.columns:
-                code.append(f"            objSqlBuilder.Append(\"{", " if index > 0 else ""}{column.name}\")")
-                index += 1
+                if column.is_autoincrement:
+                    pass
+                else:
+                    code.append(f"            objSqlBuilder.Append(\"{", " if index > 0 else ""}{column.name}\")")
+                    index += 1
             code.append(f"            objSqlBuilder.Append(\") VALUES (\")")
             index = 0
             for column in table.columns:
-                code.append(f"            objSqlBuilder.Append(\"{", " if index > 0 else ""}?\")")
-                index += 1
+                if column.is_autoincrement:
+                    pass
+                else:
+                    code.append(f"            objSqlBuilder.Append(\"{", " if index > 0 else ""}?\")")
+                    index += 1
             code.append(f"            objSqlBuilder.Append(\")\")")
             index = 0
             for column in table.columns:
-                column_net_type = column_to_net_type(column)
-                property_name = to_property_name(column.name)
-                if (column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64") and column.null:
-                    code.append(f"            If objInstance.{column.name} = 0 Then")
-                    code.append(f"                objSqlArguments.Add(Nothing)")
-                    code.append(f"            Else")
-                    code.append(f"                objSqlArguments.Add(objInstance.{property_name})")
-                    code.append(f"            End If")
+                if column.is_autoincrement:
+                    pass
                 else:
-                    code.append(f"            objSqlArguments.Add(objInstance.{property_name})")
-                index += 1
+                    column_net_type = column_to_net_type(column)
+                    property_name = to_property_name(column.name, columns_case)
+                    if (column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64") and column.null:
+                        code.append(f"            If objInstance.{property_name} = 0 Then")
+                        code.append(f"                objSqlArguments.Add(Nothing)")
+                        code.append(f"            Else")
+                        code.append(f"                objSqlArguments.Add(objInstance.{property_name})")
+                        code.append(f"            End If")
+                    else:
+                        code.append(f"            objSqlArguments.Add(objInstance.{property_name})")
+                    index += 1
             code.append(f"            mContext.DBConnections({connection}).ExecuteNonQuery(objSqlBuilder.ToString(), objSqlArguments.ToArray())")
+            for column in table.columns:
+                if column.is_autoincrement:
+                    column_net_type = column_to_net_type(column)
+                    property_name = to_property_name(column.name, columns_case)
+                    code.append(f"            objInstance.{property_name} = CType(mContext.DBConnections({connection}).ExecuteScalar(mContext.DBConnections({connection}).GetSqlSelectAutoincrementStatement()), {column_net_type.replace("Int32","Integer")})")
+                    break
+
             code.append(f"        End Sub")
             # UpdateOrInsertOrDelete by FK
-            for fk in table.foreign_keys:
-                fkname = snake_to_camel(fk.name).replace("$","")
-                code.append(f"        <Description(\"Update Insert or Deletes rows by foreign key '{snake_to_camel(fk.name)}' from table '{table.name}'\")>")
-                code.append(f"        Public Overloads Function {table.name}_UpdateOrInsertOrDeleteBy{fkname}({get_columns_as_method_parameters(table, fk.columns)}, objInstances As List(Of {table.name}VO)) As Integer")
+            for fk in sorted(table.foreign_keys, key=lambda fk: locale.strxfrm(fk.name.upper())):
+                fkname = snake_to_camel(fk.name, True).replace("$","")
+                code.append(f"        <Description(\"Update Insert or Deletes rows by foreign key '{fkname}' from table '{table.name}'\")>")
+                code.append(f"        Public Overloads Function {table.name}_UpdateOrInsertOrDeleteBy{fkname}({get_columns_as_method_parameters(table, fk.columns, columns_case)}, objInstances As List(Of {table.name}VO)) As Integer")
                 code.append(f"            Dim recordsAffected As Integer = 0")
                 code.append(f"            For Each objInstance As {table.name}VO In objInstances")
                 code.append(f"                Dim instanceIsNew As Boolean = False")
                 for column_name in table.primary_key.columns:
                     column = get_table_column(table, column_name)
                     column_net_type = column_to_net_type(column)
+                    property_name = to_property_name(column.name, columns_case)
                     if column_net_type == "String":
-                        code.append(f"                If objInstance.{column_name} Is Nothing Then instanceIsNew = True")
+                        code.append(f"                If objInstance.{property_name} Is Nothing Then instanceIsNew = True")
                     elif column_net_type == "Char":
-                        code.append(f"                If objInstance.{column_name} = CChar(Nothing) Then instanceIsNew = True")
+                        code.append(f"                If objInstance.{property_name} = CChar(Nothing) Then instanceIsNew = True")
                     elif column_net_type == "DateTime":
-                        code.append(f"                If objInstance.{column_name} = CDate(Nothing) Then instanceIsNew = True")
+                        code.append(f"                If objInstance.{property_name} = CDate(Nothing) Then instanceIsNew = True")
                     else:
-                        code.append(f"                If objInstance.{column_name} = 0 Then instanceIsNew = True")
+                        code.append(f"                If objInstance.{property_name} = 0 Then instanceIsNew = True")
                 code.append(f"")
                 for column_name in fk.columns:
                     column = get_table_column(table, column_name)
                     column_net_type = column_to_net_type(column)
+                    property_name = to_property_name(column.name, columns_case)
                     if column_net_type == "String":
-                        code.append(f"                If objInstance.{column_name} Is Nothing Then instanceIsNew = True")
+                        code.append(f"                If objInstance.{property_name} Is Nothing Then instanceIsNew = True")
                     elif column_net_type == "Char":
-                        code.append(f"                If objInstance.{column_name} = CChar(Nothing) Then instanceIsNew = True")
+                        code.append(f"                If objInstance.{property_name} = CChar(Nothing) Then instanceIsNew = True")
                     elif column_net_type == "DateTime":
-                        code.append(f"                If objInstance.{column_name} = CDate(Nothing) Then instanceIsNew = True")
+                        code.append(f"                If objInstance.{property_name} = CDate(Nothing) Then instanceIsNew = True")
                     else:
-                        code.append(f"                If objInstance.{column_name} = 0 Then instanceIsNew = True")
+                        code.append(f"                If objInstance.{property_name} = 0 Then instanceIsNew = True")
                 code.append(f"                If instanceIsNew Then")
                 for column_name in fk.columns:
                     column = get_table_column(table, column_name)
-                    code.append(f"                    objInstance.{column_name} = {column_name}")
+                    property_name = to_property_name(column.name, columns_case)
+                    code.append(f"                    objInstance.{property_name} = {property_name}")
                 code.append(f"                    {table.name}_Insert(objInstance)")
                 code.append(f"                    recordsAffected += 1")
                 code.append(f"                Else")
                 for column_name in fk.columns:
                     column = get_table_column(table, column_name)
-                    code.append(f"                    objInstance.{column_name} = {column_name}")
+                    property_name = to_property_name(column.name, columns_case)
+                    code.append(f"                    objInstance.{property_name} = {property_name}")
                 code.append(f"                    Dim differences As String = {table.name}_GetDifferencesWithDB(objInstance)")
                 code.append(f"                    If differences <> \"EXIST:\" Then")
                 code.append(f"                        {table.name}_Update(objInstance)")
@@ -808,12 +867,13 @@ class GeneratorVbV1():
                 code.append(f"                    End If")
                 code.append(f"                End If")
                 code.append(f"            Next")
-                code.append(f"            For Each objOriginalInstance As {table.name}VO In {table.name}_SelectBy{fkname}({get_columns_as_object_array_parameters(table, fk.columns)})")
+                code.append(f"            For Each objOriginalInstance As {table.name}VO In {table.name}_SelectBy{fkname}({get_columns_as_object_array_parameters(table, fk.columns, columns_case)})")
                 code.append(f"                Dim existsOriginalInstanceInList As Boolean = False")
                 code.append(f"                For Each objInstance As {table.name}VO In objInstances")
                 for column_name in table.primary_key.columns:
                     column = get_table_column(table, column_name)
-                    code.append(f"                    If objOriginalInstance.{column_name} = objInstance.{column_name} Then existsOriginalInstanceInList = True")
+                    property_name = to_property_name(column.name, columns_case)
+                    code.append(f"                    If objOriginalInstance.{property_name} = objInstance.{property_name} Then existsOriginalInstanceInList = True")
                 code.append(f"                Next")
                 code.append(f"                If Not existsOriginalInstanceInList Then 'objInstances.IndexOf(objOriginalInstance)=-1 Then")
                 code.append(f"                    {table.name}_Delete(objOriginalInstance)")
@@ -822,7 +882,7 @@ class GeneratorVbV1():
                 code.append(f"            Next")
                 code.append(f"            Return recordsAffected")
                 code.append(f"        End Function")
-                code.append(f"        Public Overloads Function {table.name}_UpdateOrInsertOrDeleteBy{fkname}({get_columns_as_method_parameters(table, fk.columns)}, objInstances As System.Array) As Integer")
+                code.append(f"        Public Overloads Function {table.name}_UpdateOrInsertOrDeleteBy{fkname}({get_columns_as_method_parameters(table, fk.columns, columns_case)}, objInstances As System.Array) As Integer")
                 code.append(f"            Dim result As Integer")
                 code.append(f"            Dim list As New List(Of {table.name}VO)")
                 code.append(f"            For Each objInstance As Object In objInstances")
@@ -832,10 +892,14 @@ class GeneratorVbV1():
                 code.append(f"                    list.Add(New {table.name}VO(CType(objInstance, DProjects.Cett.Classes.ValueObject)))")
                 code.append(f"                End If")
                 code.append(f"            Next")
-                code.append(f"            result = {table.name}_UpdateOrInsertOrDeleteBy{fkname}({get_columns_as_object_array_parameters(table, fk.columns)}, list)")
+                code.append(f"            result = {table.name}_UpdateOrInsertOrDeleteBy{fkname}({get_columns_as_object_array_parameters(table, fk.columns, columns_case)} , list)")
                 code.append(f"            Dim counter As Integer = 0")
                 code.append(f"            For Each objInstance As Object In objInstances")
                 code.append(f"                If TypeOf objInstance Is DProjects.Cett.Classes.ValueObject Then")
+                for column_name in table.primary_key.columns:
+                    column = get_table_column(table, column_name)
+                    property_name = to_property_name(column.name, columns_case)
+                    code.append(f"                    CType(objInstance, DProjects.Cett.Classes.ValueObject)(\"{property_name}\") = list(counter).{property_name}")
                 code.append(f"                End If")
                 code.append(f"                counter += 1")
                 code.append(f"            Next")
@@ -865,7 +929,7 @@ class GeneratorVbV1():
             # delete
             code.append(f"        <Description(\"Deletes record from table '{table.name}'\")>")
             code.append(f"        Public Function {table.name}_Delete(objInstance As {table.name}VO) As Boolean")
-            code.append(f"            Return {table.name}_DeleteByPK({get_columns_as_object_array_parameters_instance(table, table.primary_key.columns)})")
+            code.append(f"            Return {table.name}_DeleteByPK({get_columns_as_object_array_parameters_instance(table, table.primary_key.columns, columns_case)})")
             code.append(f"        End Function")
             # delete by pk
             code.append(f"        <Description(\"Deleted record by primary key from table '{table.name}'\")>")
@@ -875,12 +939,12 @@ class GeneratorVbV1():
             code.append(f"            Return ({table.name}_DeleteByFilter(filterExpression, filterValues) = 1)")
             code.append(f"        End Function")
             # delete by fk
-            for fk in table.foreign_keys:
-                fkname = snake_to_camel(fk.name)
+            for fk in sorted(table.foreign_keys, key=lambda fk: locale.strxfrm(fk.name.upper())):
+                fkname = snake_to_camel(fk.name, True)
                 code.append(f"        <Description(\"Deletes rows by foreign key '{fkname}' from table '{table.name}'\")>")
-                code.append(f"        Public Function {table.name}_DeleteBy{fkname}({get_columns_as_method_parameters(table, fk.columns)}) As Integer")
+                code.append(f"        Public Function {table.name}_DeleteBy{fkname}({get_columns_as_method_parameters(table, fk.columns, columns_case)}) As Integer")
                 code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, fk.columns)}\"")
-                code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, fk.columns)}}}")
+                code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, fk.columns, columns_case)}}}")
                 code.append(f"            Return {table.name}_DeleteByFilter(filterExpression, filterValues)")
                 code.append(f"        End Function")
             # update
@@ -891,32 +955,39 @@ class GeneratorVbV1():
             code.append(f"            Dim objSqlArguments As New List(Of Object)")
             for column in table.columns:
                 column_net_type = column_to_net_type(column)
-                property_name = to_property_name(column.name)
+                property_name = to_property_name(column.name, columns_case)
                 if column_net_type == "String" and column.size > 0:
                     code.append(f"            If Not objInstance.{property_name} Is Nothing AndAlso objInstance.{property_name}.length > {column.size} Then objInstance.{property_name} = objInstance.{property_name}.SubString(0, {column.size})")
+            for column in table.columns:
+                if column.name == "data_modificacio":
+                    code.append(f"            objInstance.{to_property_name(column.name, columns_case)} = Date.Now")
             code.append(f"            objSqlBuilder = New StringBuilder()")
             code.append(f"            objSqlBuilder.Append(\"UPDATE \")")
             code.append(f"            objSqlBuilder.Append(\" {table.name} \")")
             code.append(f"            objSqlBuilder.Append(\" SET \")")
             index = 0
             for column in table.columns:
-                code.append(f"            objSqlBuilder.Append(\"{"," if index > 0 else ""} {column.name} = ? \")")
-                property_name = to_property_name(column.name)
-                column_net_type = column_to_net_type(column)
-                if (column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64") and column.null:
-                    code.append(f"            If objInstance.{column.name} = 0 Then")
-                    code.append(f"                objSqlArguments.Add(Nothing)")
-                    code.append(f"            Else")
-                    code.append(f"                objSqlArguments.Add(objInstance.{property_name})")
-                    code.append(f"            End If")
+                if column.is_autoincrement:
+                    pass
                 else:
-                    code.append(f"            objSqlArguments.Add(objInstance.{property_name})")
-                index += 1
+                    code.append(f"            objSqlBuilder.Append(\"{"," if index > 0 else ""} {column.name} = ? \")")
+                    property_name = to_property_name(column.name, columns_case)
+                    column_net_type = column_to_net_type(column)
+                    if (column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64") and column.null:
+                        code.append(f"            If objInstance.{property_name} = 0 Then")
+                        code.append(f"                objSqlArguments.Add(Nothing)")
+                        code.append(f"            Else")
+                        code.append(f"                objSqlArguments.Add(objInstance.{property_name})")
+                        code.append(f"            End If")
+                    else:
+                        code.append(f"            objSqlArguments.Add(objInstance.{property_name})")
+                    index += 1
             code.append(f"            objSqlBuilder.Append(\" WHERE \")")
             index = 0
             for column_name in table.primary_key.columns:
+                property_name = to_property_name(column_name, columns_case)
                 code.append(f"            objSqlBuilder.Append(\"{" AND " if index > 0 else ""} {column_name} = ? \")")
-                code.append(f"            objSqlArguments.Add(objInstance.{column_name})")
+                code.append(f"            objSqlArguments.Add(objInstance.{property_name})")
                 index += 1
 
             code.append(f"            Dim recordsAffected As Integer = mContext.DBConnections({connection}).ExecuteNonQuery(objSqlBuilder.ToString(), objSqlArguments.ToArray())")
@@ -931,9 +1002,12 @@ class GeneratorVbV1():
             code.append(f"            Dim objSqlArguments As New List(Of Object)")
             for column in table.columns:
                 column_net_type = column_to_net_type(column)
-                property_name = to_property_name(column.name)
+                property_name = to_property_name(column.name, columns_case)
                 if column_net_type == "String" and column.size > 0:
                     code.append(f"            If Not objInstance.{property_name} Is Nothing AndAlso objInstance.{property_name}.length > {column.size} Then objInstance.{property_name} = objInstance.{property_name}.SubString(0, {column.size})")
+            for column in table.columns:
+                if column.name == "data_modificacio":
+                    code.append(f"            objInstance.{to_property_name(column.name, columns_case)} = Date.Now")
             code.append(f"            Dim objVO As {table.name}VO = {table.name}_SelectSingleByVO(objInstance)")
             code.append(f"            If objVO Is Nothing Then Return False")
             code.append(f"            objSqlBuilder = New StringBuilder()")
@@ -942,47 +1016,47 @@ class GeneratorVbV1():
             code.append(f"            objSqlBuilder.Append(\" SET \")")
             index = 0
             for column in table.columns:
-                column_net_type = column_to_net_type(column)
-                property_name = to_property_name(column.name)
-                if column_net_type == "String":
-                    code.append(f"            If Not (\"\" & objVO.{property_name}).Equals(\"\" & objInstance.{property_name}) Then")
+                if column.is_autoincrement:
+                    pass
                 else:
-                    code.append(f"            If Not objVO.{property_name} = objInstance.{property_name} Then")
-                if index > 0:
-                    code.append(f"                If isChanged Then objSqlBuilder.Append(\", \")")
-                
-                if (column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64") and column.null:
-                    code.append(f"                objSqlBuilder.Append(\" {column.name} = ? \")")
-                elif (column_net_type == "Int16"):
-                    code.append(f"                objSqlBuilder.Append(\" {column.name} = ? \")")
-                else:
-                    code.append(f"                objSqlBuilder.Append(\"{column.name} = ? \")")
-
-                if (column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64") and column.null:
-                    code.append(f"                If objInstance.{property_name} = 0 Then")
-                    code.append(f"                    objSqlArguments.Add(Nothing)")
-                    code.append(f"                Else")
-                    code.append(f"                    objSqlArguments.Add(objInstance.{property_name})")
-                    code.append(f"                End If")
-                elif (column_net_type == "String"):
-                    code.append(f"                If objInstance.{property_name} Is Nothing Then")
-                    if not column.null and require_space_when_null:
-                        code.append(f"                    objSqlArguments.Add(\" \")")
+                    column_net_type = column_to_net_type(column)
+                    property_name = to_property_name(column.name, columns_case)
+                    if column_net_type == "String":
+                        code.append(f"            If Not (\"\" & objVO.{property_name}).Equals(\"\" & objInstance.{property_name}) Then")
                     else:
+                        code.append(f"            If Not objVO.{property_name} = objInstance.{property_name} Then")
+                    code.append(f"                If isChanged Then objSqlBuilder.Append(\", \")")                    
+                    if (column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64") and column.null:
+                        code.append(f"                objSqlBuilder.Append(\" {column.name} = ? \")")
+                    elif (column_net_type == "Int16"):
+                        code.append(f"                objSqlBuilder.Append(\" {column.name} = ? \")")
+                    else:
+                        code.append(f"                objSqlBuilder.Append(\"{column.name} = ? \")")
+                    if (column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64") and column.null:
+                        code.append(f"                If objInstance.{property_name} = 0 Then")
                         code.append(f"                    objSqlArguments.Add(Nothing)")
-                    code.append(f"                Else")
-                    code.append(f"                    objSqlArguments.Add(objInstance.{property_name}.Trim())")
-                    code.append(f"                End If")
-                else:
-                    code.append(f"                objSqlArguments.Add(objInstance.{property_name})")
-                code.append(f"                isChanged = True")
-                code.append(f"            End If")
-                index += 1
+                        code.append(f"                Else")
+                        code.append(f"                    objSqlArguments.Add(objInstance.{property_name})")
+                        code.append(f"                End If")
+                    elif (column_net_type == "String"):
+                        code.append(f"                If objInstance.{property_name} Is Nothing Then")
+                        if not column.null and require_space_when_null:
+                            code.append(f"                    objSqlArguments.Add(\" \")")
+                        else:
+                            code.append(f"                    objSqlArguments.Add(Nothing)")
+                        code.append(f"                Else")
+                        code.append(f"                    objSqlArguments.Add(objInstance.{property_name}.Trim())")
+                        code.append(f"                End If")
+                    else:
+                        code.append(f"                objSqlArguments.Add(objInstance.{property_name})")
+                    code.append(f"                isChanged = True")
+                    code.append(f"            End If")
+                    index += 1
             code.append(f"            objSqlBuilder.Append(\" WHERE \")")
             index = 0
             for column_name in table.primary_key.columns:
                 column_net_type = column_to_net_type(column)
-                property_name = to_property_name(column_name)
+                property_name = to_property_name(column_name, columns_case)
                 code.append(f"            objSqlBuilder.Append(\"{" AND " if index > 0 else ""} {column_name} = ? \")")
                 code.append(f"            objSqlArguments.Add(objInstance.{property_name})")
                 index += 1
@@ -998,10 +1072,10 @@ class GeneratorVbV1():
             code.append(f"        <Description(\"Check if a record exist\")>")
             code.append(f"        Public Function {table.name}_Exists(objInstance As {table.name}VO) As Boolean")
             code.append(f"            Dim result As Boolean = False")
-            code.append(f"            If {get_columns_if_confition_nothing(table, table.primary_key.columns, require_space_when_null)} Then")
+            code.append(f"            If {get_columns_if_confition_nothing(table, table.primary_key.columns, require_space_when_null, columns_case)} Then")
             code.append(f"                result = False")
             code.append(f"            Else")
-            code.append(f"                Dim objInstanceDB As {table.name}VO = {table.name}_SelectByPK({get_columns_as_object_array_parameters_instance(table, table.primary_key.columns)})")
+            code.append(f"                Dim objInstanceDB As {table.name}VO = {table.name}_SelectByPK({get_columns_as_object_array_parameters_instance(table, table.primary_key.columns, columns_case)})")
             code.append(f"                If objInstanceDB Is Nothing Then")
             code.append(f"                    result = False")
             code.append(f"                Else")
@@ -1014,10 +1088,10 @@ class GeneratorVbV1():
             code.append(f"        <Description(\"Check differences between Instance And existing record\")>")
             code.append(f"        Public Function {table.name}_GetDifferencesWithDB(objInstance As {table.name}VO) As String")
             code.append(f"            Dim result As New StringBuilder()")
-            code.append(f"            If {get_columns_if_confition_nothing(table, table.primary_key.columns, require_space_when_null)} Then")
+            code.append(f"            If {get_columns_if_confition_nothing(table, table.primary_key.columns, require_space_when_null, columns_case)} Then")
             code.append(f"                result.Append(\"NOEXIST\")")
             code.append(f"            Else")
-            code.append(f"                Dim objInstanceDB As {table.name}VO = {table.name}_SelectByPK({get_columns_as_object_array_parameters_instance(table, table.primary_key.columns)})")
+            code.append(f"                Dim objInstanceDB As {table.name}VO = {table.name}_SelectByPK({get_columns_as_object_array_parameters_instance(table, table.primary_key.columns, columns_case)})")
             code.append(f"                If objInstanceDB Is Nothing Then")
             code.append(f"                    result.Append(\"NOEXIST\")")
             code.append(f"                Else")
@@ -1029,8 +1103,6 @@ class GeneratorVbV1():
             code.append(f"            Return result.ToString")
             code.append(f"        End Function")
             code.append(f"")
-
-        code.append(f"xxxx")
 
         # views
         for view in sorted(self._schema.views, key=lambda view: locale.strxfrm(view.name.upper())):
@@ -1124,7 +1196,7 @@ class GeneratorVbV1():
             
 
         # debug !!!
-        code = code[code.index("xxxx"):]
+        #code = code[code.index("xxxx"):]
 
         code.append(f"#End Region")
         code.append(f"")

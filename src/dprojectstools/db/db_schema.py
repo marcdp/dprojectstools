@@ -2,6 +2,7 @@ from xml.etree import ElementTree
 from xml.dom import minidom
 from dataclasses import dataclass
 from enum import Enum
+from flask import json
 from lxml import etree
 import os
 
@@ -35,7 +36,9 @@ class DataType(Enum):
         for member in DataType:
             if member.name.lower() == value:
                 return member
-            
+    def to_str(self):        
+        return self.name.lower()
+
 class OnDelete(Enum):
     NO_ACTION = 1
     CASCADE = 2
@@ -158,7 +161,7 @@ class Schema:
         self.scripts = []
 
     # static methods
-    def create(source: str, create_inspector):
+    def create(source: str, create_inspector = None):
         if os.path.exists(source):
             with open(source, "r", encoding='utf-8') as file:
                 xml = file.read()

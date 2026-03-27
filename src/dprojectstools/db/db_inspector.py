@@ -6,7 +6,7 @@ def datatype_name_to_class(column_type_name):
         return DataType.Bigint
     elif column_type_name == "BINARY":
         return DataType.Binary
-    elif column_type_name == "BLOB":
+    elif column_type_name == "BLOB" or column_type_name == "IMAGE":
         return DataType.Varbinary
     elif column_type_name == "BOOLEAN" or column_type_name == "BIT":
         return DataType.Boolean
@@ -230,6 +230,14 @@ class Inspector:
 # sql server
 class InspectorSqlServer(Inspector):
 
+    def get_table_names(self):
+        result = []
+        for table in self._inspector.get_table_names():
+            if table == "dtproperties":
+                continue
+            result.append(table)
+        return result
+
     def get_database_collation(self):
         return self.execute_scalar("SELECT DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS Collation")
     
@@ -244,7 +252,10 @@ class InspectorSqlServer(Inspector):
     def get_procedure_names(self):
         result = []
         for row in self.execute_fetchall("SELECT name FROM sys.procedures ORDER BY name"):
-            result.append(row[0])
+            name = row[0]
+            if name.startswith("sp_") or name.startswith("fn_") or name.startswith("xp_") or name.startswith("dt_"):
+                continue
+            result.append(name)
         return result
 
     def get_procedure(self, procedure_name):
@@ -279,7 +290,6 @@ class InspectorPostgresql(Inspector):
 
 # Oracle
 class InspectorOracle(Inspector):
-    
     
     
     def get_database_collation(self):

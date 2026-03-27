@@ -6,15 +6,25 @@ class GeneratorSql:
         self._separator = ";"
         self._schema = schema
 
+    # methods
     def create(schema):
         return GeneratorSql(schema)
 
+    # to override
+    def identity(self):
+        return "IDENTITY"
+    def default(self, value):
+        if value == "now":
+            return "getDate()"
+        return value
+    def data_type_name(self, column):
+        return column.data_type.name.upper()
     def disable_foreign_keys(self):
-        return ""
-    
+        return ""    
     def enable_foreign_keys(self):
         return ""
 
+    # methods
     def generate(self):
         sql = []
         for table in self._schema.tables:
@@ -43,17 +53,19 @@ class GeneratorSql:
             line.append("  ")
             line.append(column.name)
             if column.precision > 0 or column.scale > 0:
-                line.append(f"{column.data_type}({column.precision},{column.scale})")
+                line.append(f"{self.data_type_name(column)}({column.precision},{column.scale})")
             elif column.size > 0:
-                line.append(f"{column.data_type}({column.size})")
+                line.append(f"{self.data_type_name(column)}({column.size})")
             else:
-                line.append(f"{column.data_type}")
+                line.append(f"{self.data_type_name(column)}")
+            if column.is_autoincrement:
+                line.append(self.identity())
             if column.null:
                 line.append(f"NULL")
             else:
                 line.append(f"NOT NULL")
             if column.default != None:
-                line.append(f" DEFAULT {str(column.default)}")
+                line.append(f" DEFAULT {self.default(column.default)}")
             if column.description != "":
                 line.append(f"--- {column.description}")
             sql.append(" ".join(line) + ",")
@@ -126,8 +138,98 @@ class GeneratorSql:
     def drop_sequence(self, sequence):
         pass
 
-class GeneratorSqlSqllite(GeneratorSql):
+    def generate_diff(self, other_schema):
+        result = []
+        for table in self._schema.tables:
+            # get table with same name in other schema
+            other_table = None
+            for target_table in other_schema.tables:
+                if target_table.name == table.name:
+                    other_table = target_table
+                    break
+            # if not found, create table
+            if other_table == None:
+                result.append(self.create_table(table))
+                # add fks
+                for foreign_key in table.foreign_keys:
+                    result.append(self.create_table_foreign_key(table, foreign_key))
+                # add indexes
+                for index in table.indexes:
+                    result.append(self.create_table_index(table, index))
+                continue
+            else:
+                # add new columns
+                for column in table.columns:
+                    other_column = None
+                    for target_column in other_table.columns:
+                        if target_column.name == column.name:
+                            other_column = target_column
+                            break
+                    if other_column == None:
+                        result.append(self.alter_table(table))
+                # drop unexisting old columns
+                pass
+                # change columns data types, defaults, nulls, autoincrements, ...
+                pass
+       
+        # create fks
+        for table in self._schema.tables:
+            # get table with same name in other schema
+            other_table = None
+            for target_table in other_schema.tables:
+                if target_table.name == table.name:
+                    other_table = target_table
+                    break
+            # for each fk 
+            if other_table != None:
+                for foreign_key in table.foreign_keys:
+                    other_foreign_key = None
+                    for target_foreign_key in other_table.foreign_keys:
+                        if target_foreign_key.name == foreign_key.name:
+                            other_foreign_key = target_foreign_key
+                            break
+                    if other_foreign_key == None:
+                        result.append(self.create_table_foreign_key(table, foreign_key))            
+                # drop unexisting foreign keys
+                pass
+        # create indexes
+        for table in self._schema.tables:
+            # get table with same name in other schema
+            other_table = None
+            for target_table in other_schema.tables:
+                if target_table.name == table.name:
+                    other_table = target_table
+                    break
+            # for each index
+            if other_table != None:
+                for index in table.indexes:
+                    other_index = None
+                    for target_index in other_table.indexes:
+                        if target_index.name == index.name:
+                            other_index = target_index
+                            break
+                    if other_index == None:
+                        result.append(self.create_table_index(table, index))
+                # drop unexisting indexes
+                pass
 
+        # drop unexisting tables
+        for table in other_schema.tables:
+            # get table with same name in other schema
+            other_table = None
+            for target_table in self._schema.tables:
+                if target_table.name == table.name:
+                    other_table = target_table
+                    break
+            # if not found, drop table
+            if other_table == None:
+                result.append(self.drop_table(table))
+                continue        
+        # return
+        return "\n".join(result)
+
+class GeneratorSqlSqllite(GeneratorSql):
+    
     def disable_foreign_keys(self):
         return "PRAGMA foreign_keys = OFF;"
     
