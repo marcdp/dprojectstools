@@ -131,6 +131,26 @@ class CommandsManager:
             #        self.registerFunction(instance, obj, prefix)
         self._registerOrder += 1
 
+    def registerDirectory(self, directory: str, prefix: str = ""):
+        # register main decorated functions from all modules in a directory
+        directory = os.path.abspath(directory)
+        for filename in sorted(os.listdir(directory)):
+            if not filename.endswith(".py") or filename.startswith("_") or filename == "__init__.py":
+                continue
+
+            file_path = os.path.join(directory, filename)
+            module_name = f"_cmd_{os.path.splitext(filename)[0]}"
+
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Cannot load module from: {file_path}")
+
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+
+            self.register(module=module, prefix=prefix)
+                
     def registerFunction(self, instance, func, prefix: str = ""):
         # create a command fron function
         func_name = func.__name__
@@ -786,7 +806,10 @@ class CommandsManager:
             return func_bounded(**command_args_dict)
         else:
             # invoke
-            return command_to_execute.func(**command_args_dict)
+            result = command_to_execute.func(**command_args_dict)
+            if isinstance(result, bool):
+                result = 1 if not result else 0
+            return result
 
         
     
