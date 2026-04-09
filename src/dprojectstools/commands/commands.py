@@ -235,14 +235,19 @@ class CommandsManager:
                 metadata = param.annotation.__metadata__[0]
                 flag_char = metadata.chr
             # required
-            flag_required = (param.default == inspect.Parameter.empty or param.default == None)
+            # flag_required = (param.default == inspect.Parameter.empty or param.default == None)
+            flag_required = (param.default == inspect.Parameter.empty)
+            if command_name[0] == "module" and command_name[1] == "build":
+                flag_required = flag_required
+
             #  type
             flag_type = None
             if hasattr(param.annotation, "__metadata__"):
                 flag_type = param.annotation.__origin__.__name__
             # argument default
             flag_default = None
-            if param.default != inspect.Parameter.empty and param.default != None:
+            # if param.default != inspect.Parameter.empty and param.default != None:
+            if param.default != inspect.Parameter.empty:
                 flag_default = param.default
             # crea CommandFlag
             flag = CommandFlag(flag_name, flag_alias, flag_title, flag_subtitle, flag_required, flag_type, flag_default, flag_char)
@@ -539,6 +544,16 @@ class CommandsManager:
         # subcommands
         if len(subcommands) > 0:
             print("Commands:")
+            # compute indent_subcommands
+            for subcommand in subcommands:
+                subcommand_name = subcommand.name
+                if command != None:
+                    subcommand_name = subcommand_name[len(command.name):]
+                if subcommand.alias != None:
+                    subcommand_name = subcommand.alias
+                if indent_subcommands < len(' '.join(subcommand_name)) + 2:
+                    indent_subcommands = len(' '.join(subcommand_name)) + 2 
+            # print
             for subcommand in subcommands:
                 subcommand_name = subcommand.name
                 if command != None:
@@ -660,11 +675,13 @@ class CommandsManager:
         
         # exec Command
         command_to_execute = None
+        command_to_execute_args_len = 0
         for command in reversed(self._commands):
             command_name = command.alias if command.alias else command.name
             if len(command_name) <= len(self._argv) - 1:
                 if command_name == self._argv[1:len(command_name)+1]:
                     command_to_execute = command
+                    command_to_execute_args_len = len(command_name)
                     break
             if command_to_execute:
                 break
@@ -720,7 +737,8 @@ class CommandsManager:
                     self._argv.append("--" + flag.alias)
                     self._argv.append(flag_value_separator.join(flag_values))
         # read flags
-        command_args = self._argv[len(command_to_execute.name)+1:]
+        #command_args = self._argv[len(command_to_execute.name)+1:]
+        command_args = self._argv[command_to_execute_args_len+1:]
         command_args_dict = {}
         command_args_errors = []        
         for flag in command_to_execute.flags:
@@ -761,6 +779,10 @@ class CommandsManager:
                 command_args_dict[flag.name] = flag_value
                 command_args.pop(index + 1)
                 command_args.pop(index)
+        # get invalid flags
+        for argument in command_args:
+            if argument.startswith("-"):
+                command_args_errors.append(f"invalid flag: {argument}")
         # read arguments
         for argument in command_to_execute.arguments:
             argument_value = None

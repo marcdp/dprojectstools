@@ -10,7 +10,7 @@ where = ["src"]
 
 [project]
 name = "dprojectstools"
-version = "0.0.31"
+version = "0.0.32"
 authors = [
   { name="Marc Delos", email="marcdp@dprojects.com" },
 ]
