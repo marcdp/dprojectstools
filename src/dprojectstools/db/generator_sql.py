@@ -77,8 +77,27 @@ class GeneratorSql:
             sql.append(self.create_table_index(table, index))
         return "\n".join(sql)
 
-    def alter_table(self, table):
-        return ""
+    def alter_table_add_column(self, table, column):
+        line = []
+        line.append(f"ALTER TABLE {table.name} ADD ")
+        line.append(column.name)
+        if column.precision > 0 or column.scale > 0:
+            line.append(f"{self.data_type_name(column)}({column.precision},{column.scale})")
+        elif column.size > 0:
+            line.append(f"{self.data_type_name(column)}({column.size})")
+        else:
+            line.append(f"{self.data_type_name(column)}")
+        if column.is_autoincrement:
+            line.append(self.identity())
+        if column.null:
+            line.append(f"NULL")
+        else:
+            line.append(f"NOT NULL")
+        if column.default != None:
+            line.append(f" DEFAULT {self.default(column.default)}")
+        if column.description != "":
+            line.append(f"--- {column.description}")
+        return " ".join(line)
 
     def drop_table(self, table):
         return f"DROP TABLE {table.name}{self._separator}"
@@ -166,7 +185,7 @@ class GeneratorSql:
                             other_column = target_column
                             break
                     if other_column == None:
-                        result.append(self.alter_table(table))
+                        result.append(self.alter_table_add_column(table, column))
                 # drop unexisting old columns
                 pass
                 # change columns data types, defaults, nulls, autoincrements, ...

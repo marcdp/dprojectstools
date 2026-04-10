@@ -10,7 +10,12 @@ def sanitize_xml_tree(elem):
     if elem.tail:
         elem.tail = escape(elem.tail)
     # Escape attributes
-    elem.attrib = {k: escape(v) for k, v in elem.attrib.items()}
+    # elem.attrib = {k: escape(v) for k, v in elem.attrib.items()}
+    elem.attrib = {
+        k: escape(str(v)) if v is not None else ""
+        for k, v in elem.attrib.items()
+    }
+
     # Recurse
     for child in elem:
         sanitize_xml_tree(child)

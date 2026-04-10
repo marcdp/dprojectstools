@@ -5,7 +5,7 @@ from .db_schema import Schema, Column, Table, Index, DataType, Procedure
 from .generator_xml import GeneratorXml
 import fnmatch
 
-def column_to_net_type(column: Column):
+def column_to_net_type(column: Column, prefer_decimal: bool = False):
     result = ""
     if column.data_type == DataType.Char:
         result = "Char"
@@ -20,17 +20,22 @@ def column_to_net_type(column: Column):
     if column.data_type == DataType.Varbinary:
         result = "byte[]"
     if column.data_type == DataType.Numeric:
-        if column.scale == 0 and column.precision == 0:
+        column_scale = column.scale or 0
+        column_precision = column.precision or 0        
+        if column_scale == 0 and column_precision == 0:
             result = "Decimal"
-        elif column.scale == 22 and column.precision == 7:
+        elif column_scale == 22 and column_precision == 7:
             result = "Decimal"
-        elif column.scale == 0 and column.precision >= 1:
+        elif column_scale == 0 and column_precision >= 1:
             result = "Decimal"
-        elif column.scale == 2 and column.precision == 5:
-            result = "Decimal"
-        elif column.precision <= 7:
+        elif column_scale == 2 and column_precision == 5:
+            if prefer_decimal:
+                result = "Decimal"
+            else:
+                result = "Single"
+        elif column_precision <= 7:
             result = "Single"
-        elif column.precision <= 15:
+        elif column_precision <= 15:
             result = "Double"    
         else:
             result = "Decimal"
@@ -292,8 +297,8 @@ def get_procedure_arguments(procedure: Procedure):
     index = 0
     for argument in procedure.arguments:
         if index > 0:
-            result += ","
-        argument_net_type = column_to_net_type(argument)        
+            result += ", "
+        argument_net_type = column_to_net_type(argument, prefer_decimal=True)
         if argument.direction == "IN":
             result += f"ByVal "
         else:
@@ -335,6 +340,10 @@ class GeneratorVbV1():
         xml = GeneratorXml.create(self._schema).generate()
         require_space_when_null = ("GIET" in connection)
         code = []
+        code.append(f"Option Compare Text")
+        code.append(f"Option Explicit On")
+        code.append(f"Option Strict On")
+        code.append(f"")
         code.append(f"Imports System")
         code.append(f"Imports System.Text")
         code.append(f"Imports System.Collections")
@@ -375,10 +384,11 @@ class GeneratorVbV1():
             for column in table.columns:
                 column_net_type = column_to_net_type(column)                
                 column_name = to_property_name(column.name, columns_case)
+                column_size = column.size or 0
                 property_name = column_name
                 if property_name == "ALIAS":
                     property_name = "[ALIAS]"
-                code.append(f"            Public Property {property_name} As {column_net_type}{f" 'size={column.size}" if column.size > 0 else ""}")
+                code.append(f"            Public Property {property_name} As {column_net_type}{f" 'size={column_size}" if column_size > 0 else ""}")
                 code.append(f"                Get")
                 code.append(f"                    Return MyBase.Attributes.GetAs(Of {column_net_type})(\"{column_name}\")")
                 code.append(f"                End Get")
@@ -433,8 +443,10 @@ class GeneratorVbV1():
                             defaultValue = f"CBool({column.default})"
                         else:
                             defaultValue = "False"
-                    elif column.default == "now":
+                    elif column.default.strip().lower() == "now":
                         defaultValue = "Date.Now"
+                    elif column.default.strip().lower() == "null":
+                        defaultValue = "Nothing"
                     elif column.default.startswith("'"):
                         defaultValue = column.default.strip().replace("'","\"")
                         if column.size == 1:
@@ -480,7 +492,7 @@ class GeneratorVbV1():
                 else:
                     code.append(f"                If Me.{column_name} <> objInstance.{column_name} Then")
                 code.append(f"                    If differencesSB.Length <> 0 Then differencesSB.Append(\",\")")
-                code.append(f"                    differencesSB.Append(\"{to_property_name(column.name, columns_case)}\")")
+                code.append(f"                    differencesSB.Append(\"{to_property_name(column.name, columns_case).replace("SET__","SET_")}\")")
                 code.append(f"                    result = False")
                 code.append(f"                End If")
             code.append(f"                differences = differencesSB.ToString()")
@@ -663,7 +675,7 @@ class GeneratorVbV1():
             # SelectBy by FK
             for fk in sorted(table.foreign_keys, key=lambda fk: locale.strxfrm(fk.name.upper())):
                 fkname = snake_to_camel(fk.name, True).replace("$","")
-                code.append(f"        <Description(\"Selects rows by foreign key '{fkname}' from table '{table.name}'\")>")
+                code.append(f"        <Description(\"Selects rows by foreign key '{snake_to_camel(fk.name, True)}' from table '{table.name}'\")>")
                 code.append(f"        Public Overloads Function {table.name}_SelectBy{fkname}({get_columns_as_method_parameters(table, fk.columns, columns_case)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {table.name}VO()")
                 code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, fk.columns)}\"")
                 code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, fk.columns, columns_case)}}}")
@@ -678,7 +690,7 @@ class GeneratorVbV1():
                     column = get_table_column(table, column_name)
                     target_column_name = column.name
                     target_column_net_type = column_to_net_type(column)
-                code.append(f"        <Description(\"Selects rows by foreign key '{fkname}' from table '{table.name}'\")>")
+                code.append(f"        <Description(\"Selects rows by foreign key '{snake_to_camel(fk.name, True)}' from table '{table.name}'\")>")
                 code.append(f"        Public Overloads Function {table.name}_SelectBy{fkname}({snake_to_camel(target_column_name, True)}Array As {target_column_net_type}(), Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {table.name}VO()")
                 code.append(f"            Dim filterExpression As StringBuilder = New StringBuilder()")
                 code.append(f"            Dim counter As Int32 = 0")
@@ -697,7 +709,7 @@ class GeneratorVbV1():
             for index in table.indexes:
                 idxname = snake_to_camel(index.name, True).replace("$","")
                 if index.unique:                    
-                    code.append(f"        <Description(\"Selects row by index '{idxname}' from table '{table.name}'\")>")
+                    code.append(f"        <Description(\"Selects row by index '{snake_to_camel(index.name, True)}' from table '{table.name}'\")>")
                     code.append(f"        Public Function {table.name}_SelectByIndex{idxname}({get_columns_as_method_parameters(table, index.columns, columns_case)}) As {table.name}VO")
                     code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, index.columns, True)}\"")
                     code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, index.columns, columns_case)}}}")
@@ -715,11 +727,14 @@ class GeneratorVbV1():
                         #    column = get_table_column(table, column_name)
                         #    target_column_name = column.name
                         #    target_column_net_type = column_to_net_type(column)
-                        code.append(f"        <Description(\"Selects row id by index '{idxname}' from table '{table.name}'\")>")
-                        code.append(f"        Public Function {table.name}_SelectIdByIndex{idxname}({get_columns_as_method_parameters(table, index.columns, columns_case)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As Int32")
+                        column = get_table_column(table, table.primary_key.columns[0])
+                        column_net_type = column_to_net_type(column)
+
+                        code.append(f"        <Description(\"Selects row id by index '{snake_to_camel(index.name, True)}' from table '{table.name}'\")>")
+                        code.append(f"        Public Function {table.name}_SelectIdByIndex{idxname}({get_columns_as_method_parameters(table, index.columns, columns_case)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {column_net_type}")
                         code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, index.columns, True)}\"")
                         code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, index.columns, columns_case)}}}")
-                        code.append(f"            Dim result As Int32() = {table.name}_SelectIDsByFilter(filterExpression, filterValues, \"\")")
+                        code.append(f"            Dim result As {column_net_type}() = {table.name}_SelectIDsByFilter(filterExpression, filterValues, \"\")")
                         code.append(f"            If result.Length > 0 Then")
                         code.append(f"                Return result(0)")
                         code.append(f"            Else")
@@ -727,7 +742,7 @@ class GeneratorVbV1():
                         code.append(f"            End If")
                         code.append(f"        End Function")
                 else:
-                    code.append(f"        <Description(\"Selects rows by index '{idxname}' from table '{table.name}'\")>")
+                    code.append(f"        <Description(\"Selects rows by index '{snake_to_camel(index.name, True)}' from table '{table.name}'\")>")
                     code.append(f"        Public Function {table.name}_SelectByIndex{idxname}({get_columns_as_method_parameters(table, index.columns, columns_case)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {table.name}VO()")
                     code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, index.columns, True)}\"")
                     code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, index.columns, columns_case)}}}")
@@ -735,7 +750,7 @@ class GeneratorVbV1():
                     code.append(f"        End Function")
             # SelectBy by Index Pk
             pkidxname = snake_to_camel(table.primary_key.name, True).replace("$","")
-            code.append(f"        <Description(\"Selects row by index '{pkidxname}' from table '{table.name}'\")>")
+            code.append(f"        <Description(\"Selects row by index '{snake_to_camel(table.primary_key.name, True)}' from table '{table.name}'\")>")
             code.append(f"        Public Function {table.name}_SelectByIndex{pkidxname}({get_columns_as_method_parameters(table, table.primary_key.columns, columns_case)}) As {table.name}VO")
             code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, table.primary_key.columns, True)}\"")
             code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, table.primary_key.columns, columns_case)}}}")
@@ -749,7 +764,7 @@ class GeneratorVbV1():
             if len(table.primary_key.columns) == 1:
                 column = get_table_column(table, table.primary_key.columns[0])
                 column_net_type = column_to_net_type(column)
-                code.append(f"        <Description(\"Selects row id by index '{pkidxname}' from table '{table.name}'\")>")
+                code.append(f"        <Description(\"Selects row id by index '{snake_to_camel(table.primary_key.name, True)}' from table '{table.name}'\")>")
                 code.append(f"        Public Function {table.name}_SelectIdByIndex{pkidxname}({get_columns_as_method_parameters(table, table.primary_key.columns, columns_case)}, Optional orderby As String = \"\", Optional startIndex As Integer = 0, Optional length As Integer = -1) As {column_net_type}")
                 code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, table.primary_key.columns, True)}\"")
                 code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, table.primary_key.columns, columns_case)}}}")
@@ -767,9 +782,10 @@ class GeneratorVbV1():
             code.append(f"            Dim objSqlBuilder As StringBuilder")
             for column in table.columns:
                 column_net_type = column_to_net_type(column)
+                column_size = column.size or 0
                 property_name = to_property_name(column.name, columns_case)
-                if column_net_type == "String" and column.size > 0:
-                    code.append(f"            If Not objInstance.{property_name} Is Nothing AndAlso objInstance.{property_name}.length > {column.size} Then objInstance.{property_name} = objInstance.{property_name}.SubString(0, {column.size})")
+                if column_net_type == "String" and column_size > 0:
+                    code.append(f"            If Not objInstance.{property_name} Is Nothing AndAlso objInstance.{property_name}.length > {column_size} Then objInstance.{property_name} = objInstance.{property_name}.SubString(0, {column_size})")
             code.append(f"            Dim objSqlArguments As New List(Of Object)")
             code.append(f"            objSqlBuilder = New StringBuilder()")
             code.append(f"            objSqlBuilder.Append(\"INSERT \")")
@@ -818,7 +834,7 @@ class GeneratorVbV1():
             # UpdateOrInsertOrDelete by FK
             for fk in sorted(table.foreign_keys, key=lambda fk: locale.strxfrm(fk.name.upper())):
                 fkname = snake_to_camel(fk.name, True).replace("$","")
-                code.append(f"        <Description(\"Update Insert or Deletes rows by foreign key '{fkname}' from table '{table.name}'\")>")
+                code.append(f"        <Description(\"Update Insert or Deletes rows by foreign key '{snake_to_camel(fk.name, True)}' from table '{table.name}'\")>")
                 code.append(f"        Public Overloads Function {table.name}_UpdateOrInsertOrDeleteBy{fkname}({get_columns_as_method_parameters(table, fk.columns, columns_case)}, objInstances As List(Of {table.name}VO)) As Integer")
                 code.append(f"            Dim recordsAffected As Integer = 0")
                 code.append(f"            For Each objInstance As {table.name}VO In objInstances")
@@ -940,8 +956,8 @@ class GeneratorVbV1():
             code.append(f"        End Function")
             # delete by fk
             for fk in sorted(table.foreign_keys, key=lambda fk: locale.strxfrm(fk.name.upper())):
-                fkname = snake_to_camel(fk.name, True)
-                code.append(f"        <Description(\"Deletes rows by foreign key '{fkname}' from table '{table.name}'\")>")
+                fkname = snake_to_camel(fk.name, True).replace("$","")
+                code.append(f"        <Description(\"Deletes rows by foreign key '{snake_to_camel(fk.name, True)}' from table '{table.name}'\")>")
                 code.append(f"        Public Function {table.name}_DeleteBy{fkname}({get_columns_as_method_parameters(table, fk.columns, columns_case)}) As Integer")
                 code.append(f"            Dim filterExpression As String = \"{get_columns_as_sql_where(table, fk.columns)}\"")
                 code.append(f"            Dim filterValues As Object() = New Object() {{{get_columns_as_object_array_parameters(table, fk.columns, columns_case)}}}")
@@ -956,8 +972,9 @@ class GeneratorVbV1():
             for column in table.columns:
                 column_net_type = column_to_net_type(column)
                 property_name = to_property_name(column.name, columns_case)
-                if column_net_type == "String" and column.size > 0:
-                    code.append(f"            If Not objInstance.{property_name} Is Nothing AndAlso objInstance.{property_name}.length > {column.size} Then objInstance.{property_name} = objInstance.{property_name}.SubString(0, {column.size})")
+                column_size = column.size or 0
+                if column_net_type == "String" and column_size > 0:
+                    code.append(f"            If Not objInstance.{property_name} Is Nothing AndAlso objInstance.{property_name}.length > {column_size} Then objInstance.{property_name} = objInstance.{property_name}.SubString(0, {column_size})")
             for column in table.columns:
                 if column.name == "data_modificacio":
                     code.append(f"            objInstance.{to_property_name(column.name, columns_case)} = Date.Now")
@@ -1003,8 +1020,9 @@ class GeneratorVbV1():
             for column in table.columns:
                 column_net_type = column_to_net_type(column)
                 property_name = to_property_name(column.name, columns_case)
-                if column_net_type == "String" and column.size > 0:
-                    code.append(f"            If Not objInstance.{property_name} Is Nothing AndAlso objInstance.{property_name}.length > {column.size} Then objInstance.{property_name} = objInstance.{property_name}.SubString(0, {column.size})")
+                column_size = column.size or 0
+                if column_net_type == "String" and column_size > 0:
+                    code.append(f"            If Not objInstance.{property_name} Is Nothing AndAlso objInstance.{property_name}.length > {column_size} Then objInstance.{property_name} = objInstance.{property_name}.SubString(0, {column_size})")
             for column in table.columns:
                 if column.name == "data_modificacio":
                     code.append(f"            objInstance.{to_property_name(column.name, columns_case)} = Date.Now")
@@ -1025,11 +1043,12 @@ class GeneratorVbV1():
                         code.append(f"            If Not (\"\" & objVO.{property_name}).Equals(\"\" & objInstance.{property_name}) Then")
                     else:
                         code.append(f"            If Not objVO.{property_name} = objInstance.{property_name} Then")
-                    code.append(f"                If isChanged Then objSqlBuilder.Append(\", \")")                    
+                    if index > 0:
+                        code.append(f"                If isChanged Then objSqlBuilder.Append(\", \")")                    
                     if (column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64") and column.null:
-                        code.append(f"                objSqlBuilder.Append(\" {column.name} = ? \")")
+                        code.append(f"                objSqlBuilder.Append(\"{column.name} = ? \")")
                     elif (column_net_type == "Int16"):
-                        code.append(f"                objSqlBuilder.Append(\" {column.name} = ? \")")
+                        code.append(f"                objSqlBuilder.Append(\"{column.name} = ? \")")
                     else:
                         code.append(f"                objSqlBuilder.Append(\"{column.name} = ? \")")
                     if (column_net_type == "Int16" or column_net_type == "Int32" or column_net_type == "Int64") and column.null:
@@ -1152,19 +1171,21 @@ class GeneratorVbV1():
             if not procedure.name in procedures:
                 continue
             code.append(f"        <Description(\"Execute sp named {procedure.name}\")>")
-            code.append(f"        Public Sub Exec_{procedure.name}({get_procedure_arguments(procedure)})")
+            code.append(f"        Public Sub Exec_{procedure.name.replace("$", "").replace(".", "_")}({get_procedure_arguments(procedure)})")
             code.append(f"            Try ")
             code.append(f"                Dim cmd As IDbCommand = mContext.DBConnections({connection}).CreateCommand(\"\", New Object() {{}})")
             code.append(f"                cmd.CommandText = \"{procedure.name}\"")
             code.append(f"                cmd.CommandType = CommandType.StoredProcedure")
             index = 0
             for argument in procedure.arguments:
-                argument_net_type = column_to_net_type(argument)
+                argument_net_type = column_to_net_type(argument, prefer_decimal=True)
                 code.append(f"                Dim param{index} As IDbDataParameter = cmd.CreateParameter()")
                 code.append(f"                param{index}.ParameterName = \"{argument.name}\"")
                 # value
                 if argument_net_type == "String":
                     code.append(f"                param{index}.Value = {argument.name}")
+                elif argument_net_type == "Date" or argument_net_type == "DateTime":
+                    code.append(f"                param{index}.Value = If({argument.name}.HasValue, CType({argument.name}.Value, Nullable(Of DateTime)), Nothing)")
                 else:
                     code.append(f"                param{index}.Value = If({argument.name}.HasValue, CType({argument.name}.Value, Nullable(Of Decimal)), Nothing)")
                 # size
@@ -1183,12 +1204,29 @@ class GeneratorVbV1():
                 else:
                     code.append(f"                param{index}.DbType = DbType.String")
                 index += 1 
+            # add parameters
             index = 0
             for argument in procedure.arguments:
                 code.append(f"                cmd.Parameters.Add(param{index})")
                 index += 1 
+            # execute
             code.append(f"                cmd.ExecuteNonQuery()")
-            # todo .. read output arguments
+            
+            # output arguments
+            index = 0
+            for argument in procedure.arguments:
+                argument_net_type = column_to_net_type(argument, prefer_decimal=True)
+                if argument.direction == "IN-OUT" or argument.direction == "OUT":
+                    code.append(f"                If param{index}.Value IsNot DBNull.Value Then")
+                    if argument_net_type == "Decimal":
+                        code.append(f"                    {argument.name} = CDec(param{index}.Value)")
+                    else:
+                        code.append(f"                    {argument.name} = CStr(param{index}.Value)")
+                    pass
+                    code.append(f"                End If")
+                index += 1 
+
+            # catch exception
             code.append(f"            Catch e As Exception")
             code.append(f"                Throw")
             code.append(f"            End Try")

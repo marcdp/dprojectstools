@@ -54,6 +54,8 @@ def datatype_name_to_class(column_type_name):
         return DataType.Varbinary
     elif column_type_name == "VARCHAR" or column_type_name == "VARCHAR2" or column_type_name == "ROWID":
         return DataType.Varchar
+    elif column_type_name == None:
+        return DataType.Varchar
     else:
         raise ValueError(f"Invalid column datatype: {column_type_name}")
     
@@ -67,7 +69,7 @@ class Inspector:
         
     # methods
     def get_table_names(self):
-        return self._inspector.get_table_names()
+        return sorted(self._inspector.get_table_names())
     
     def get_table(self, table_name):
         table = Table(table_name)
@@ -163,7 +165,7 @@ class Inspector:
 
     # views
     def get_view_names(self):
-        return self._inspector.get_view_names()
+        return sorted(self._inspector.get_view_names())
     
     def get_view(self, view_name):
         view = View(view_name)
@@ -183,7 +185,7 @@ class Inspector:
 
     # sequences
     def get_sequence_names(self):
-        return self._inspector.get_sequence_names()
+        return sorted(self._inspector.get_sequence_names())
 
     def get_sequence(self, sequence_name):
         raise NotImplemented()
@@ -192,6 +194,7 @@ class Inspector:
     def get_schema(self):
         database = Schema()
         database.collation = self.get_database_collation()
+
         # tables
         database.tables = []
         for table_name in self.get_table_names():
@@ -236,7 +239,7 @@ class InspectorSqlServer(Inspector):
             if table == "dtproperties":
                 continue
             result.append(table)
-        return result
+        return sorted(result)
 
     def get_database_collation(self):
         return self.execute_scalar("SELECT DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS Collation")
@@ -256,7 +259,7 @@ class InspectorSqlServer(Inspector):
             if name.startswith("sp_") or name.startswith("fn_") or name.startswith("xp_") or name.startswith("dt_"):
                 continue
             result.append(name)
-        return result
+        return sorted(result)
 
     def get_procedure(self, procedure_name):
         procedure = Procedure(procedure_name)
@@ -291,12 +294,11 @@ class InspectorPostgresql(Inspector):
 # Oracle
 class InspectorOracle(Inspector):
     
-    
     def get_database_collation(self):
         return self.execute_scalar("SELECT VALUE FROM NLS_DATABASE_PARAMETERS WHERE PARAMETER = 'NLS_CHARACTERSET'")
     def get_table_names(self):
         names = self._inspector.get_table_names()
-        return [name.upper() for name in names]    
+        return sorted([name.upper() for name in names])
     def get_table_pk(self, table_name):
         result = self._inspector.get_pk_constraint(table_name)
         if result["name"] != None:
@@ -354,21 +356,36 @@ class InspectorOracle(Inspector):
         return result
     def get_view_names(self):
         names = self._inspector.get_view_names()
-        return [name.upper() for name in names]    
+        return sorted([name.upper() for name in names])    
     def get_procedure_names(self):
         result = []
-        for row in self.execute_fetchall("SELECT OBJECT_NAME FROM USER_PROCEDURES WHERE OBJECT_TYPE = 'PROCEDURE'"):
+        sql = "\
+            SELECT OBJECT_NAME FROM USER_PROCEDURES WHERE OBJECT_TYPE = 'PROCEDURE' \
+            UNION \
+            SELECT CONCAT(CONCAT(OBJECT_NAME, '.'), PROCEDURE_NAME) FROM USER_PROCEDURES WHERE NOT PROCEDURE_NAME IS NULL"
+        for row in self.execute_fetchall(sql):
             result.append(row[0].upper())
-        return result
+        return sorted(result)
     def get_procedure(self, procedure_name):
         procedure = Procedure(procedure_name)
         procedure.description = ""
-        procedure.content = "" # self.execute_scalar("SELECT dbms_metadata.get_ddl('PROCEDURE',:procedure_name,'') FROM dual", {"procedure_name": procedure_name})
+        procedure.content = ""
         procedure.arguments = []
-        for row in self.execute_fetchall("SELECT ARGUMENT_NAME, PLS_TYPE, DEFAULTED, DEFAULT_VALUE, DEFAULT_LENGTH, IN_OUT, DATA_LENGTH, DATA_PRECISION, DATA_SCALE FROM all_arguments WHERE object_name = :procedure_name ORDER BY POSITION", {"procedure_name": procedure_name}):
+        if procedure_name.find(".") >= 0:
+            package_name = procedure_name.split(".")[0]
+            procedure_name = procedure_name.split(".")[-1]
+            rows = self.execute_fetchall("SELECT ARGUMENT_NAME, PLS_TYPE, DEFAULTED, DEFAULT_VALUE, DEFAULT_LENGTH, IN_OUT, DATA_LENGTH, DATA_PRECISION, DATA_SCALE FROM all_arguments WHERE package_name = :package_name AND object_name = :procedure_name  ORDER BY POSITION ", {"package_name": package_name, "procedure_name": procedure_name})
+        else:      
+            rows = self.execute_fetchall("SELECT ARGUMENT_NAME, PLS_TYPE, DEFAULTED, DEFAULT_VALUE, DEFAULT_LENGTH, IN_OUT, DATA_LENGTH, DATA_PRECISION, DATA_SCALE FROM all_arguments WHERE object_name = :procedure_name  ORDER BY POSITION", {"procedure_name": procedure_name })
+        for row in rows:
             name = row[0]
             description = ""
-            data_type = datatype_name_to_class(row[1])
+            oracle_data_type = row[1]
+            if oracle_data_type == "PLS_INTEGER":
+                oracle_data_type = "INT"            
+            elif oracle_data_type == "RAW":
+                oracle_data_type = "BLOB"
+            data_type = datatype_name_to_class(oracle_data_type)
             null = (row[2] == 'N')
             size = int(row[6]) if row[6] != None else 0
             precision = int(row[7]) if row[7] != None else 0
@@ -379,7 +396,7 @@ class InspectorOracle(Inspector):
         return procedure
     def get_sequence_names(self):
         names = self._inspector.get_sequence_names()
-        return [name.upper() for name in names]    
+        return sorted([name.upper() for name in names])    
     def get_sequence(self, sequence_name):
         result = self.execute_fetchall("SELECT MIN_VALUE, INCREMENT_BY FROM USER_SEQUENCES WHERE SEQUENCE_NAME = :sequence_name", {"sequence_name": sequence_name})
         sequence = Sequence(sequence_name)
