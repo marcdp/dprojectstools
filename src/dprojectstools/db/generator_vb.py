@@ -1185,7 +1185,8 @@ class GeneratorVbV1():
                 if argument_net_type == "String":
                     code.append(f"                param{index}.Value = {argument.name}")
                 elif argument_net_type == "Date" or argument_net_type == "DateTime":
-                    code.append(f"                param{index}.Value = If({argument.name}.HasValue, CType({argument.name}.Value, Nullable(Of DateTime)), Nothing)")
+                    # code.append(f"                param{index}.Value = If({argument.name}.HasValue, CType({argument.name}.Value, Nullable(Of DateTime)), Nothing)")
+                    code.append(f"                param{index}.Value = If({argument.name}.HasValue, {argument.name}.Value, Nothing)")
                 else:
                     code.append(f"                param{index}.Value = If({argument.name}.HasValue, CType({argument.name}.Value, Nullable(Of Decimal)), Nothing)")
                 # size
@@ -1201,6 +1202,8 @@ class GeneratorVbV1():
                 # type
                 if argument_net_type == "Decimal":
                     code.append(f"                param{index}.DbType = DbType.Decimal")
+                elif argument_net_type == "Date" or argument_net_type == "DateTime":
+                    code.append(f"                param{index}.DbType = DbType.Date")
                 else:
                     code.append(f"                param{index}.DbType = DbType.String")
                 index += 1 
