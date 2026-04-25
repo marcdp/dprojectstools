@@ -71,14 +71,24 @@ def print_table(items, fields) -> str:
 
 # yaml utils
 def to_yaml_safe(value):
+    if is_dataclass(value):
+        return to_yaml_safe(asdict(value))
+
     if isinstance(value, Path):
         return str(value)
+
     if isinstance(value, dict):
         return {k: to_yaml_safe(v) for k, v in value.items()}
+
     if isinstance(value, list):
         return [to_yaml_safe(v) for v in value]
+
     if isinstance(value, tuple):
         return [to_yaml_safe(v) for v in value]
+
+    if hasattr(value, "__dict__"):
+        return {k: to_yaml_safe(v) for k, v in vars(value).items()}
+
     return value
 
 class IndentYamlDumper(yaml.SafeDumper):
@@ -86,8 +96,8 @@ class IndentYamlDumper(yaml.SafeDumper):
         return super().increase_indent(flow, False)
         
 def print_yaml( value: object, indent: int = 2) -> None:
-    if is_dataclass(value):
-        value = asdict(value)
+    # if is_dataclass(value):
+    #     value = asdict(value)
     value = to_yaml_safe(value)
     print_info(yaml.dump(value,
         Dumper=IndentYamlDumper,
