@@ -2,7 +2,6 @@ from xml.etree import ElementTree
 from xml.dom import minidom
 from dataclasses import dataclass
 from enum import Enum
-from flask import json
 from lxml import etree
 import os
 
