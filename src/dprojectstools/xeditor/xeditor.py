@@ -929,12 +929,13 @@ class XEditor:
             filename = "<none>"
         if self._readonly:
             filename += " [RO]"
-        if self._title == None:
-            header1 = f" {filename:} "
-        else:
-            header1 = f" {self._title} "
+        header1 = ""
         if self._dirty:
-            header1 += "*"
+            header1 += " *"
+        if self._title == None:
+            header1 += f" {filename:} "
+        else:
+            header1 += f" {self._title} "
         header2 = f" {f"{self._format}, " if self._format else ""}Ln {self._cursor_y + 1}/{len(self._lines)}, Col {self._cursor_x + 1}, {"INS" if self._insert else "OVR"}, {self._encoding}, {self._newline.replace('\n','LF').replace('\r','CR')} "
         header = header1 + (" " * (self._cols - len(header1) - len(header2) )) + header2  
         # message
