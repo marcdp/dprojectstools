@@ -113,6 +113,8 @@ class GeneratorXml:
             if procedure.description != None and len(procedure.description) > 0:
                 procedure_xml.set("description", procedure.description)        
             procedure_arguments_xml = ElementTree.SubElement(procedure_xml, "arguments")
+            if procedure.arguments is None:
+                procedure.arguments = []
             for argument in procedure.arguments:
                 procedure_argument_xml = ElementTree.SubElement(procedure_arguments_xml, "argument")
                 procedure_argument_xml.set("name", argument.name)

@@ -388,7 +388,12 @@ class GeneratorVbV1():
                 property_name = column_name
                 if property_name == "ALIAS":
                     property_name = "[ALIAS]"
-                code.append(f"            Public Property {property_name} As {column_net_type}{f" 'size={column_size}" if column_size > 0 else ""}")
+                if property_name == "class":
+                    property_name = "[class]"
+                property_modifier = ""
+                if property_name == "name":
+                    property_modifier = " Shadows"
+                code.append(f"            Public{property_modifier} Property {property_name} As {column_net_type}{f" 'size={column_size}" if column_size > 0 else ""}")
                 code.append(f"                Get")
                 code.append(f"                    Return MyBase.Attributes.GetAs(Of {column_net_type})(\"{column_name}\")")
                 code.append(f"                End Get")
@@ -434,21 +439,25 @@ class GeneratorVbV1():
                             defaultValue = "Nothing"
                 else:
                     defaultValue = column.default
+                    while defaultValue.startswith("(") and defaultValue.endswith(")"):
+                        defaultValue = defaultValue[1:-1].strip()
                     if column_net_type == "Boolean":
-                        if column.default == "0":
+                        if defaultValue == "0":
                             defaultValue = "False"
-                        elif column.default == "1":
-                            defaultValue = "False"
-                        elif column.default:
-                            defaultValue = f"CBool({column.default})"
+                        elif defaultValue == "1":
+                            defaultValue = "True"
+                        elif defaultValue:
+                            defaultValue = f"CBool({defaultValue})"
                         else:
                             defaultValue = "False"
-                    elif column.default.strip().lower() == "now":
+                    elif defaultValue.strip().lower() == "now" or defaultValue.strip().lower() == "getdate()":
                         defaultValue = "Date.Now"
-                    elif column.default.strip().lower() == "null":
+                    elif defaultValue.strip().lower() == "newid()":
+                        defaultValue = "System.Guid.NewGuid().ToString()"
+                    elif defaultValue.strip().lower() == "null":
                         defaultValue = "Nothing"
-                    elif column.default.startswith("'"):
-                        defaultValue = column.default.strip().replace("'","\"")
+                    elif defaultValue.startswith("'"):
+                        defaultValue = defaultValue.strip().replace("'","\"")
                         if column.size == 1:
                             if defaultValue == "\"\"":
                                 defaultValue = "\" \""
