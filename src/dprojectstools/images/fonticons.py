@@ -37,10 +37,12 @@ class Fonticons:
         #absolutize
         if not os.path.isabs(path):
             path = os.path.join(os.getcwd(), path)
+
         # read file
         lines = []
         with open(path, "r", encoding="utf-8") as file:
             lines = file.readlines()
+
         # process
         icons = list()
         icon_names = []

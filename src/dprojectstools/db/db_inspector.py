@@ -148,6 +148,13 @@ class Inspector:
             table.indexes.append(index)
         # records
         table.records = []
+        # log
+        #if table_name == "PLANS_ESTUDIS":
+        #    print("columns", table.columns)
+        #    print("pk", table.primary_key)
+        #    print("fks", table.foreign_keys)
+        #    print("indexes", table.indexes)
+        #    exit()
         # return
         return table
     
