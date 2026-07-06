@@ -1204,7 +1204,7 @@ class GeneratorVbV1():
                 # direction
                 if argument.direction == "IN":
                     code.append(f"                param{index}.Direction = ParameterDirection.Input")
-                elif argument.direction == "IN-OUT":
+                elif argument.direction == "IN-OUT" or argument.direction == "IN/OUT":
                     code.append(f"                param{index}.Direction = ParameterDirection.InputOutput")
                 elif argument.direction == "OUT":
                     code.append(f"                param{index}.Direction = ParameterDirection.Output")
@@ -1228,7 +1228,7 @@ class GeneratorVbV1():
             index = 0
             for argument in procedure.arguments:
                 argument_net_type = column_to_net_type(argument, prefer_decimal=True)
-                if argument.direction == "IN-OUT" or argument.direction == "OUT":
+                if argument.direction == "IN-OUT" or argument.direction == "IN/OUT" or argument.direction == "OUT":
                     code.append(f"                If param{index}.Value IsNot DBNull.Value Then")
                     if argument_net_type == "Decimal":
                         code.append(f"                    {argument.name} = CDec(param{index}.Value)")
