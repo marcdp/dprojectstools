@@ -122,6 +122,7 @@ class XEditor:
         else:
             self._newline = self.autodetect_newline(text)
         self._lines = [line for line in text.splitlines()]
+        text = text.replace('\t', ' ' * TAB_SPACES)
         if text.endswith("\n"):
             self._lines.append("")
         self._filename = None
@@ -803,6 +804,7 @@ class XEditor:
                     text = aes_decrypt(text, self._password)
                 # split in lines
                 self._newline = self.autodetect_newline(text)
+                text = text.replace('\t', ' ' * TAB_SPACES)
                 self._lines = [line.rstrip(self._newline) for line in text.splitlines()]
             self._readonly = not os.access(filename, os.W_OK)
         self._filename = filename

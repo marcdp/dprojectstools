@@ -10,7 +10,6 @@ def hightlight_md(line: str) -> str:
         return cache[line]
     # process
     result = []
-    c_ant = " "
     title_started = False
     list_item_started = False
     anchor_started = False
@@ -22,9 +21,34 @@ def hightlight_md(line: str) -> str:
 
     
     default_fg_color = Sequences.FG_WHITE
-    for c in line:
+    if line.startswith(">"):
+        line_result = Sequences.FG_GREEN + line + default_fg_color
+        cache[line] = line_result
+        return line_result
+
+    i = 0
+    while i < len(line):
+        c = line[i]
         # pre process
-        if c == "#":
+        if line.startswith("enc:", i):
+            result.append("enc:")
+            i += len("enc:")
+            result.append(Sequences.FG_BRIGHT_RED)
+            while i < len(line) and not line[i].isspace() and line[i] != "#":
+                result.append(line[i])
+                i += 1
+            if single_quote_started:
+                result.append(Sequences.FG_YELLOW)
+            elif anchor_started:
+                result.append(Sequences.FG_YELLOW)
+            elif title_started:
+                result.append(Sequences.FG_CYAN)
+            elif bold_started or italic_started:
+                result.append(Sequences.FG_BRIGHT_BLUE)
+            else:
+                result.append(default_fg_color)
+            continue
+        elif c == "#":
             if not title_started:
                 title_started = True
                 result.append(Sequences.FG_CYAN)
@@ -74,7 +98,6 @@ def hightlight_md(line: str) -> str:
         else:
             pass
         # process
-        c_ant = c
         result.append(c)
         # post process
         if list_item_started:
@@ -91,6 +114,7 @@ def hightlight_md(line: str) -> str:
             if single_quote_count == 0:
                 result.append(default_fg_color)            
 
+        i += 1
         
     # return
     line_result = "".join(result)

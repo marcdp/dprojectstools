@@ -10,22 +10,30 @@ def hightlight_env(line: str) -> str:
         return cache[line]
     # process
     result = []
-    c_ant = " "
     comment_started = False
     varname_started = False
     varvalue_started = False
-    secret_started = False
     default_fg_color = Sequences.FG_WHITE
-    for c in line:
+    i = 0
+    while i < len(line):
+        c = line[i]
         # pre process
-        if c == "#":
+        if not comment_started and line.startswith("enc:", i):
+            result.append("enc:")
+            i += len("enc:")
+            result.append(Sequences.FG_BRIGHT_RED)
+            while i < len(line) and not line[i].isspace() and line[i] != "#":
+                result.append(line[i])
+                i += 1
+            result.append(default_fg_color)
+            continue
+        elif c == "#":
             if not comment_started:
                 comment_started = True
                 result.append(Sequences.FG_GREEN)
         elif c == "\n":
             comment_started = False
             varvalue_started = False
-            secret_started = False
             result.append(default_fg_color)
         elif c.isalnum():
             if comment_started:
@@ -38,17 +46,13 @@ def hightlight_env(line: str) -> str:
         elif c == "=":
             result.append(default_fg_color)
         # process
-        c_ant = c
         result.append(c)
         # post process
         if c == "=":
             if not varvalue_started:
                 varvalue_started = True
                 result.append(Sequences.FG_WHITE)
-        elif c == ":":
-            if not secret_started:
-                secret_started = True
-                result.append(Sequences.FG_BRIGHT_MAGENTA)
+        i += 1
     # return
     line_result = "".join(result)
     cache[line] = line_result

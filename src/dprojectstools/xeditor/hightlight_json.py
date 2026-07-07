@@ -10,7 +10,6 @@ def hightlight_json(line: str) -> str:
         return cache[line]
     # process
     result = []
-    c_ant = " "
     comment_started = False
     inside_string = False
     next_is_escaped = False
@@ -18,16 +17,38 @@ def hightlight_json(line: str) -> str:
 
     
     default_fg_color = Sequences.FG_WHITE
-    for c in line:
+    string_fg_color = default_fg_color
+    i = 0
+    while i < len(line):
+        c = line[i]
         # pre process
-        if c == "\\":
+        if line.startswith("enc:", i):
+            result.append("enc:")
+            i += len("enc:")
+            result.append(Sequences.FG_BRIGHT_RED)
+            while i < len(line):
+                if inside_string and line[i] == "\"" and not next_is_escaped:
+                    break
+                if not inside_string and (line[i].isspace() or line[i] in ",]}"):
+                    break
+                result.append(line[i])
+                if line[i] == "\\" and not next_is_escaped:
+                    next_is_escaped = True
+                else:
+                    next_is_escaped = False
+                i += 1
+            result.append(string_fg_color if inside_string else default_fg_color)
+            continue
+        elif c == "\\":
             next_is_escaped = True
         elif c == "\"":
             if dots_comman_detected:
                 result.append(Sequences.FG_BRIGHT_YELLOW)
+                string_fg_color = Sequences.FG_BRIGHT_YELLOW
             else:
                 if not inside_string:                
                     result.append(Sequences.FG_CYAN)
+                    string_fg_color = Sequences.FG_CYAN
         elif (c == "{" or c == "}") and not inside_string:
             result.append(Sequences.FG_BRIGHT_YELLOW)
         elif (c == "/") and not inside_string:
@@ -37,7 +58,6 @@ def hightlight_json(line: str) -> str:
         elif (c == ":" or c == ",") and not inside_string:
             dots_comman_detected = True
         # process
-        c_ant = c
         result.append(c)
         # post process
         if next_is_escaped:
@@ -50,6 +70,7 @@ def hightlight_json(line: str) -> str:
                 inside_string = False
         elif (c == "{" or c == "}") and not inside_string:
             result.append(default_fg_color)
+        i += 1
         
     # return
     line_result = "".join(result)

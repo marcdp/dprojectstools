@@ -2,7 +2,6 @@
 # dprojectstools
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
-
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![PyPI](https://img.shields.io/pypi/v/dprojectstools)
 
