@@ -419,6 +419,7 @@ class XEditor:
                     self._setCursor(len(self._lines[y1]), y1)
                     self._select_x = 0
                     self._select_y = y1                
+            self._dirty = True
             # print 
             self._printHeader(flush = False)
             self._printLines(flush = False)
@@ -438,6 +439,7 @@ class XEditor:
                 self._setCursor(self._cursor_x - TAB_SPACES, self._cursor_y)
                 if self._select_x != None:
                     self._select_x -= TAB_SPACES
+                self._dirty = True
                 self._printHeader(flush = False)
                 self._printLines(flush = False)
                 self._printCursor()
@@ -459,6 +461,7 @@ class XEditor:
                 if line.startswith(spaces):
                     line = line[len(spaces):]
                     self._lines[y] = line
+            self._dirty = True
             # print 
             self._printHeader(flush = False)
             self._printLines(flush = False)
@@ -592,11 +595,13 @@ class XEditor:
                 x = line.find(self._keyword)
             if x >= 0:
                 self._setSelect(False)
-                self._printLine(y)
                 self._setCursor(x, y)
                 self._select_y = y
                 self._select_x = x + len(self._keyword)
-                self._printLine(y)
+                
+                self._printHeader(flush = False)
+                self._printLines(flush = False)
+                self._printCursor()
                 found = True
                 break
             y += 1
@@ -623,11 +628,12 @@ class XEditor:
                 x = line.rfind(self._keyword)
             if x >= 0:
                 self._setSelect(False)
-                self._printLine(y)
                 self._setCursor(x, y)
                 self._select_y = y
                 self._select_x = x + len(self._keyword)
-                self._printLine(y)
+                self._printHeader(flush = False)
+                self._printLines(flush = False)
+                self._printCursor()
                 found = True
                 break
             y -= 1
@@ -978,8 +984,7 @@ class XEditor:
         self._stdout.write(Sequences.SET_CURSOR_POSITION_X_Y.format(1, 1 + 1 + index - self._offset_y))
 
         # selected
-        if self._select_x != None:
-            line = self._colorizeLine(line, index)
+        line = self._colorizeLine(line, index)
 
         if line_len < self._cols:
             line += " " * (self._cols - line_len)
@@ -987,10 +992,16 @@ class XEditor:
             line = line[:line_len - 1]
         
         # highlight
-        line = self._hightlight(line)
+        if self._select_x == None:
+            line = self._hightlight(line)
+        else:
+            from_y = min(self._select_y, self._cursor_y)
+            to_y = max(self._select_y, self._cursor_y)
+            if index < from_y or to_y < index:
+                line = self._hightlight(line)  
         
         # current line hightlight
-        if index == self._cursor_y:
+        if self._select_x == None and index == self._cursor_y:
             line = Sequences.bg_color_fromrgb("#222222") + line + Sequences.RESET
 
         # print
@@ -1035,10 +1046,16 @@ class XEditor:
                 line = line[:len(line) - 1]
 
             # hightlight
-            line = self._hightlight(line)  
+            if self._select_x == None:
+                line = self._hightlight(line)  
+            else:
+                from_y = min(self._select_y, self._cursor_y)
+                to_y = max(self._select_y, self._cursor_y)
+                if self._offset_y + y < from_y or to_y < self._offset_y + y:
+                    line = self._hightlight(line)  
 
             # current line hightlight
-            if y == self._cursor_y:
+            if self._offset_y + y == self._cursor_y:
                 line = Sequences.bg_color_fromrgb("#222222") + line + Sequences.RESET
 
             # write line
