@@ -92,6 +92,28 @@ def hightlight_yml(line: str) -> str:
         while key_start < len(line) and line[key_start].isspace():
             key_start += 1
 
+    value_is_string = False
+    if key_colon != -1:
+        value_start = key_colon + 1
+        while value_start < len(line) and line[value_start].isspace():
+            value_start += 1
+        if value_start < len(line) and line[value_start] != "#":
+            value_end = value_start
+            while value_end < len(line) and not line[value_end].isspace():
+                if line[value_end] in ",]}#":
+                    break
+                value_end += 1
+            first_value = line[value_start:value_end]
+            number_match = _NUMBER_RE.fullmatch(first_value)
+            value_is_string = (
+                line[value_start] in "'\""
+                or (
+                    line[value_start] not in "[{"
+                    and first_value not in ("false", "true", "null")
+                    and number_match is None
+                )
+            )
+
     result = []
     quote = None
     escaped = False
@@ -104,7 +126,7 @@ def hightlight_yml(line: str) -> str:
             result.extend((comments_color, line[i:]))
             break
 
-        if quote is None and (key_colon == -1 or i > key_colon) and line.startswith("null", i):
+        if not value_is_string and quote is None and (key_colon == -1 or i > key_colon) and line.startswith("null", i):
             end = i + len("null")
             starts_scalar = i == 0 or line[i - 1].isspace() or line[i - 1] in "[,{"
             ends_scalar = (
@@ -118,7 +140,7 @@ def hightlight_yml(line: str) -> str:
                 continue
 
         boolean = None
-        if quote is None and (key_colon == -1 or i > key_colon):
+        if not value_is_string and quote is None and (key_colon == -1 or i > key_colon):
             for candidate in ("false", "true"):
                 if not line.startswith(candidate, i):
                     continue
@@ -137,7 +159,7 @@ def hightlight_yml(line: str) -> str:
             i += len(boolean)
             continue
 
-        if quote is None and (key_colon == -1 or i > key_colon):
+        if not value_is_string and quote is None and (key_colon == -1 or i > key_colon):
             number_match = _NUMBER_RE.match(line, i)
             if number_match is not None:
                 end = number_match.end()
