@@ -14,6 +14,7 @@ from .hightlight_none import  hightlight_none
 from .hightlight_env import  hightlight_env
 from .hightlight_md import  hightlight_md
 from .hightlight_json import  hightlight_json
+from .hightlight_yml import  hightlight_yml
 
 
 # constants
@@ -1218,6 +1219,8 @@ class XEditor:
             self._hightlight = hightlight_md
         elif self._format == "json" or self._format == "jsonc":
             self._hightlight = hightlight_json
+        elif self._format == "yaml" or self._format == "yml":
+            self._hightlight = hightlight_yml
         else:
             self._hightlight = hightlight_none
         # set cursor style

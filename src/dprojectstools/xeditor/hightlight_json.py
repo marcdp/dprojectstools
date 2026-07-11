@@ -22,11 +22,16 @@ def hightlight_json(line: str) -> str:
     while i < len(line):
         c = line[i]
         # pre process
-        if line.startswith("enc:", i):
-            result.append("enc:")
-            i += len("enc:")
+        braced_encrypted = line.startswith("${enc:", i)
+        plain_encrypted = line.startswith("enc:", i)
+        if braced_encrypted or plain_encrypted:
+            marker = "${enc:" if braced_encrypted else "enc:"
+            result.append(marker)
+            i += len(marker)
             result.append(Sequences.FG_BRIGHT_RED)
             while i < len(line):
+                if braced_encrypted and line[i] == "}":
+                    break
                 if inside_string and line[i] == "\"" and not next_is_escaped:
                     break
                 if not inside_string and (line[i].isspace() or line[i] in ",]}"):
@@ -38,6 +43,9 @@ def hightlight_json(line: str) -> str:
                     next_is_escaped = False
                 i += 1
             result.append(string_fg_color if inside_string else default_fg_color)
+            if braced_encrypted and i < len(line) and line[i] == "}":
+                result.append("}")
+                i += 1
             continue
         elif c == "\\":
             next_is_escaped = True
@@ -49,7 +57,7 @@ def hightlight_json(line: str) -> str:
                 if not inside_string:                
                     result.append(Sequences.FG_CYAN)
                     string_fg_color = Sequences.FG_CYAN
-        elif (c == "{" or c == "}") and not inside_string:
+        elif c in "{}[]" and not inside_string:
             result.append(Sequences.FG_BRIGHT_YELLOW)
         elif (c == "/") and not inside_string:
             result.append(Sequences.FG_GREEN)
@@ -68,7 +76,7 @@ def hightlight_json(line: str) -> str:
             else:
                 result.append(default_fg_color)
                 inside_string = False
-        elif (c == "{" or c == "}") and not inside_string:
+        elif c in "{}[]" and not inside_string:
             result.append(default_fg_color)
         i += 1
         

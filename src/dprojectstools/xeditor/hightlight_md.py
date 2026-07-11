@@ -30,11 +30,18 @@ def hightlight_md(line: str) -> str:
     while i < len(line):
         c = line[i]
         # pre process
-        if line.startswith("enc:", i):
-            result.append("enc:")
-            i += len("enc:")
+        braced_encrypted = line.startswith("${enc:", i)
+        plain_encrypted = line.startswith("enc:", i)
+        if braced_encrypted or plain_encrypted:
+            marker = "${enc:" if braced_encrypted else "enc:"
+            result.append(marker)
+            i += len(marker)
             result.append(Sequences.FG_BRIGHT_RED)
-            while i < len(line) and not line[i].isspace() and line[i] != "#":
+            while i < len(line):
+                if braced_encrypted and line[i] == "}":
+                    break
+                if line[i].isspace() or line[i] == "#":
+                    break
                 result.append(line[i])
                 i += 1
             if single_quote_started:
@@ -47,6 +54,9 @@ def hightlight_md(line: str) -> str:
                 result.append(Sequences.FG_BRIGHT_BLUE)
             else:
                 result.append(default_fg_color)
+            if braced_encrypted and i < len(line) and line[i] == "}":
+                result.append("}")
+                i += 1
             continue
         elif c == "#":
             if not title_started:
