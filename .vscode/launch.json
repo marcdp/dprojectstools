@@ -7,7 +7,7 @@
             "request": "launch",
             "console": "externalTerminal",
             "module": "dprojectstools.xeditor",
-            "args": ["../xtrader/runtime/config/config.yml"] 
+            "args": ["../xtrader/runtime/config/a.yml"] 
         }
     ]
 }

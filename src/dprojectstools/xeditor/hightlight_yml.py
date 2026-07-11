@@ -73,6 +73,7 @@ def hightlight_yml(line: str) -> str:
     bracket_color = Sequences.fg_color_fromrgb("#FFD703")
     separator_color = Sequences.fg_color_fromrgb("#D4D4D4")
     null_color = Sequences.fg_color_fromrgb("#569CD6")
+    url_parts_separators_color = Sequences.fg_color_fromrgb("#569CFF")
     if line.startswith("---"):
         line_result = separator_color + line + default_color
         cache[line] = line_result
@@ -93,6 +94,8 @@ def hightlight_yml(line: str) -> str:
             key_start += 1
 
     value_is_string = False
+    value_is_url = False
+    value_start = len(line)
     if key_colon != -1:
         value_start = key_colon + 1
         while value_start < len(line) and line[value_start].isspace():
@@ -113,6 +116,20 @@ def hightlight_yml(line: str) -> str:
                     and number_match is None
                 )
             )
+            value_text = line[value_start:]
+            comment_start = value_text.find(" #")
+            if comment_start == -1:
+                comment_start = len(value_text)
+            value_text = value_text[:comment_start]
+            value_is_url = "://" in value_text or ":?" in value_text
+    elif list_item_index != -1 or line[key_start:key_start + 1] == "[":
+        value_start = key_start
+        value_text = line[value_start:]
+        comment_start = value_text.find(" #")
+        if comment_start == -1:
+            comment_start = len(value_text)
+        value_text = value_text[:comment_start]
+        value_is_url = "://" in value_text or ":?" in value_text
 
     result = []
     quote = None
@@ -212,6 +229,9 @@ def hightlight_yml(line: str) -> str:
         if quote is None and char in "[]":
             result.append(bracket_color)
 
+        if value_is_url and i >= value_start and char in ":/?&=":
+            result.append(url_parts_separators_color)
+
         if quote == '"' and char == "\\":
             result.extend((string_backslash_color, char))
             if i + 1 < len(line):
@@ -227,6 +247,8 @@ def hightlight_yml(line: str) -> str:
             result.append(string_color)
 
         result.append(char)
+        if value_is_url and i >= value_start and char in ":/?&=":
+            result.append(string_color if quote is not None else default_color)
 
         if quote == '"' and not opened_quote:
             if escaped:
