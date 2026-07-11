@@ -58,7 +58,7 @@ def _key_colon(line: str) -> int:
 
 # Highlight YAML with a small, fast line scanner, like the other editor highlighters.
 def hightlight_yml(line: str) -> str:
-    if line in cache:
+    if line in cache and False:
         return cache[line]
 
     default_color = Sequences.fg_color_fromrgb("#A5D6FF")
@@ -71,9 +71,11 @@ def hightlight_yml(line: str) -> str:
     encrypted_color = Sequences.fg_color_fromrgb("#FF6B6B")
     list_item_color =   Sequences.fg_color_fromrgb("#BBBEBF")
     bracket_color = Sequences.fg_color_fromrgb("#FFD703")
+    tag_color = Sequences.fg_color_fromrgb("#C586C0")
     separator_color = Sequences.fg_color_fromrgb("#D4D4D4")
     null_color = Sequences.fg_color_fromrgb("#569CD6")
     url_parts_separators_color = Sequences.fg_color_fromrgb("#569CFF")
+    
     if line.startswith("---"):
         line_result = separator_color + line + default_color
         cache[line] = line_result
@@ -92,6 +94,11 @@ def hightlight_yml(line: str) -> str:
         key_start += 1
         while key_start < len(line) and line[key_start].isspace():
             key_start += 1
+
+    key_uses_color = (
+        key_colon != -1
+        and not any(char.isspace() for char in line[key_start:key_colon])
+    )
 
     value_is_string = False
     value_is_url = False
@@ -132,12 +139,18 @@ def hightlight_yml(line: str) -> str:
         value_is_url = "://" in value_text or ":?" in value_text
 
     result = []
+    result.append(default_color)
     quote = None
     escaped = False
     i = 0
     while i < len(line):
         char = line[i]
         opened_quote = False
+
+        if not key_uses_color and i == key_start and key_start < key_colon:
+            result.extend((default_color, line[key_start:key_colon]))
+            i = key_colon
+            continue
 
         if quote is None and char == "#" and (i == 0 or line[i - 1].isspace()):
             result.extend((comments_color, line[i:]))
@@ -229,6 +242,9 @@ def hightlight_yml(line: str) -> str:
         if quote is None and char in "[]":
             result.append(bracket_color)
 
+        if quote is None and char in "<>":
+            result.append(tag_color)
+
         if value_is_url and i >= value_start and char in ":/?&=":
             result.append(url_parts_separators_color)
 
@@ -270,6 +286,8 @@ def hightlight_yml(line: str) -> str:
         elif quote is None and i == list_item_index:
             result.append(default_color)
         elif quote is None and char in "[]":
+            result.append(default_color)
+        elif quote is None and char in "<>":
             result.append(default_color)
 
         i += 1

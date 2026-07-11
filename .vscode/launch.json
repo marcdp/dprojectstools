@@ -7,7 +7,7 @@
             "request": "launch",
             "console": "externalTerminal",
             "module": "dprojectstools.xeditor",
-            "args": ["../xtrader/runtime/config/a.yml"] 
+            "args": ["../xvault/tests/data/test.md"] 
         }
     ]
 }
