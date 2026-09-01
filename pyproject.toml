@@ -46,6 +46,7 @@ i18n-xgettext = "dprojectstools.i18n.xgettext:main"
 p = "dprojectstools.commands.p:main"
 secrets = "dprojectstools.secrets.__main__:main"
 db = "dprojectstools.db.__main__:main"
+otp = "dprojectstools.otp.__main__:main"
 
 
 [project.urls]
