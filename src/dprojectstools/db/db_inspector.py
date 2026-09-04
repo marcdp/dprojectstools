@@ -1,5 +1,5 @@
 from sqlalchemy import Integer, create_engine, inspect, text, Column as SQLAlchemColumn
-from .db_schema import Schema, Table, Column, PrimaryKey, ForeignKey, Index, View, Sequence, Procedure, Script, OnDelete, OnUpdate, DataType, ProcedureArgument
+from .db_schema import Schema, Table, Column, PrimaryKey, ForeignKey, Index, View, Sequence, Procedure, Function, Script, OnDelete, OnUpdate, DataType, ProcedureArgument, FunctionArgument
 
 def datatype_name_to_class(column_type_name):
     if column_type_name == "BIGINT":
@@ -190,6 +190,13 @@ class Inspector:
     def get_procedure(self, procedure_name):
         raise NotImplemented()
 
+    # functions
+    def get_function_names(self):
+        raise NotImplemented()
+
+    def get_function(self, function_name):
+        raise NotImplemented()
+
     # sequences
     def get_sequence_names(self):
         return sorted(self._inspector.get_sequence_names())
@@ -217,6 +224,11 @@ class Inspector:
         for procedure_name in self.get_procedure_names():
             print("procedure", procedure_name, "...")
             database.procedures.append(self.get_procedure(procedure_name))
+        # functions
+        database.functions = []
+        for function_name in self.get_function_names():
+            print("function", function_name, "...")
+            database.functions.append(self.get_function(function_name))
         # sequences
         database.sequences = []
         for sequence_name in self.get_sequence_names():
@@ -274,6 +286,16 @@ class InspectorSqlServer(Inspector):
         procedure.content = self.execute_scalar("SELECT definition  FROM sys.sql_modules  WHERE object_id = OBJECT_ID(:procedure_name)", {"procedure_name": procedure_name})
         return procedure
 
+    def get_function_names(self):
+        result = []
+        return sorted(result)
+
+    def get_function(self, function_name):
+        function = Function(function_name)
+        function.description = ""
+        function.content = self.execute_scalar("SELECT definition  FROM sys.sql_modules  WHERE object_id = OBJECT_ID(:function_name)", {"function_name": function_name})
+        return function
+
 
 # sqlite
 class InspectorSqlite(Inspector):
@@ -283,6 +305,8 @@ class InspectorSqlite(Inspector):
     def get_procedure_names(self):
         return []
     def get_sequence_names(self):
+        return []
+    def get_function_names(self):
         return []
 
 
@@ -401,6 +425,43 @@ class InspectorOracle(Inspector):
             argument = ProcedureArgument(name, description, data_type, size, precision, scale, null, direction) 
             procedure.arguments.append(argument)
         return procedure
+    def get_function_names(self):
+        result = []
+        sql = "\
+            SELECT OBJECT_NAME FROM USER_PROCEDURES WHERE OBJECT_TYPE = 'FUNCTION' \
+            UNION \
+            SELECT CONCAT(CONCAT(OBJECT_NAME, '.'), PROCEDURE_NAME) FROM USER_PROCEDURES WHERE NOT PROCEDURE_NAME IS NULL"
+        for row in self.execute_fetchall(sql):
+            result.append(row[0].upper())
+        return sorted(result)   
+    def get_function(self, function_name):
+        function = Function(function_name)
+        function.description = ""
+        function.content = ""
+        function.arguments = []
+        if function_name.find(".") >= 0:
+            package_name = function_name.split(".")[0]
+            function_name = function_name.split(".")[-1]
+            rows = self.execute_fetchall("SELECT ARGUMENT_NAME, PLS_TYPE, DEFAULTED, DEFAULT_VALUE, DEFAULT_LENGTH, IN_OUT, DATA_LENGTH, DATA_PRECISION, DATA_SCALE FROM all_arguments WHERE package_name = :package_name AND object_name = :function_name  ORDER BY POSITION ", {"package_name": package_name, "function_name": function_name})
+        else:      
+            rows = self.execute_fetchall("SELECT ARGUMENT_NAME, PLS_TYPE, DEFAULTED, DEFAULT_VALUE, DEFAULT_LENGTH, IN_OUT, DATA_LENGTH, DATA_PRECISION, DATA_SCALE FROM all_arguments WHERE object_name = :function_name  ORDER BY POSITION", {"function_name": function_name })
+        for row in rows:
+            name = row[0]
+            description = ""
+            oracle_data_type = row[1]
+            if oracle_data_type == "PLS_INTEGER":
+                oracle_data_type = "INT"            
+            elif oracle_data_type == "RAW":
+                oracle_data_type = "BLOB"
+            data_type = datatype_name_to_class(oracle_data_type)
+            null = (row[2] == 'N')
+            size = int(row[6]) if row[6] != None else 0
+            precision = int(row[7]) if row[7] != None else 0
+            scale = int(row[8]) if row[8] != None else 0
+            direction = row[5]
+            argument = ProcedureArgument(name, description, data_type, size, precision, scale, null, direction) 
+            function.arguments.append(argument)
+        return function    
     def get_sequence_names(self):
         names = self._inspector.get_sequence_names()
         return sorted([name.upper() for name in names])    

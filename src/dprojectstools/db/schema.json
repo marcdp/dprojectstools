@@ -211,6 +211,56 @@
         }
       }
     },
+    "functions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "arguments", "content"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "dataType", "direction"],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "dataType": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "precision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "scale": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "null": {
+                  "type": "boolean"
+                },
+                "direction": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "sequences": {
       "type": "array",
       "items": {

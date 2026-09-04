@@ -130,6 +130,38 @@
             </xs:sequence>
           </xs:complexType>
         </xs:element>
+        <!-- functions -->
+        <xs:element name="functions" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element minOccurs="0" maxOccurs="unbounded" name="function">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="arguments">
+                      <xs:complexType>
+                        <xs:sequence minOccurs="0">
+                          <xs:element maxOccurs="unbounded" name="argument">
+                            <xs:complexType>
+                              <xs:attribute name="name" type="xs:string" use="required" />
+                              <xs:attribute name="dataType" type="xs:string" use="required" />
+                              <xs:attribute name="size" type="xs:unsignedInt" use="optional" />
+                              <xs:attribute name="precision" type="xs:unsignedInt" use="optional" />
+                              <xs:attribute name="scale" type="xs:unsignedInt" use="optional" />
+                              <xs:attribute name="null" type="xs:boolean" use="optional" />
+                              <xs:attribute name="direction" type="xs:string" use="required" />
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="content" />
+                  </xs:sequence>
+                  <xs:attribute name="name" type="xs:string" use="required" />
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
         <!-- sequences -->
         <xs:element name="sequences" minOccurs="0">
           <xs:complexType>

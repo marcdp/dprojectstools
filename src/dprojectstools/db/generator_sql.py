@@ -150,6 +150,13 @@ class GeneratorSql:
     def drop_procedure(self, procedure):
         pass
 
+    def create_function(self, function):
+        pass
+    def alter_function(self, function):
+        pass
+    def drop_function(self, function):
+        pass
+
     def create_sequence(self, sequence):
         pass
     def alter_sequence(self, sequence):

@@ -132,6 +132,33 @@ class GeneratorXml:
                 procedure_argument_xml.set("direction", str(argument.direction))
             procedure_content_xml = ElementTree.SubElement(procedure_xml, "content")
             procedure_content_xml.text = procedure.content
+        # functions
+        functions_xml = ElementTree.SubElement(xml_database, "functions")
+        for function in self._schema.functions:
+            function_xml = ElementTree.SubElement(functions_xml, "function")
+            function_xml.set("name", function.name)
+            if function.description != None and len(function.description) > 0:
+                function_xml.set("description", function.description)        
+            function_arguments_xml = ElementTree.SubElement(function_xml, "arguments")
+            if function.arguments is None:
+                function.arguments = []
+            for argument in function.arguments:
+                function_argument_xml = ElementTree.SubElement(function_arguments_xml, "argument")
+                function_argument_xml.set("name", argument.name)
+                if argument.description != None and len(argument.description) > 0:
+                    function_argument_xml.set("description", argument.description)
+                function_argument_xml.set("dataType", argument.data_type.name.lower())
+                if argument.size > 0:
+                    function_argument_xml.set("size", str(argument.size))
+                if argument.precision > 0:
+                    function_argument_xml.set("precision", str(argument.precision))
+                if argument.scale > 0:
+                    function_argument_xml.set("scale", str(argument.scale))
+                if argument.null:
+                    function_argument_xml.set("null", "true")
+                function_argument_xml.set("direction", str(argument.direction))
+            function_content_xml = ElementTree.SubElement(function_xml, "content")
+            function_content_xml.text = function.content        
         # sequences
         sequences_xml = ElementTree.SubElement(xml_database, "sequences")
         for sequence in self._schema.sequences:

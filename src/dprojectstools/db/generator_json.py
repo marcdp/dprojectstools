@@ -39,6 +39,7 @@ class GeneratorJson:
             "tables": [],
             "views": [],
             "procedures": [],
+            "functions": [],
             "sequences": [],
             "scripts": []
         }
@@ -121,6 +122,26 @@ class GeneratorJson:
                     "direction": argument.direction
                 }
                 procedureDict["arguments"].append(argumentDict)
+        for function in self._schema.functions:
+            functionDict = {
+                "name": function.name,
+                "description": function.description if function.description else None,
+                "arguments": [],
+                "content": function.content
+            }
+            result["functions"].append(functionDict)
+            for argument in function.arguments:
+                argumentDict = {
+                    "name": argument.name,
+                    "description": argument.description if argument.description else None,
+                    "data_type": argument.data_type.to_str(),
+                    "size": argument.size if argument.size > 0 else None,
+                    "precision": argument.precision if argument.precision > 0 else None,
+                    "scale": argument.scale if argument.scale > 0 else None,
+                    "null": True if argument.null else None,
+                    "direction": argument.direction
+                }
+                functionDict["arguments"].append(argumentDict)
         for sequence in self._schema.sequences:
             sequenceDict = {
                 "name": sequence.name,

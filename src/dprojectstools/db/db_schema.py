@@ -133,6 +133,24 @@ class Procedure:
     content: str = None
 
 @dataclass
+class FunctionArgument:
+    name: str
+    description: str = ""
+    data_type: DataType = DataType.Varchar
+    size: int = 0
+    precision: int = 0
+    scale: int = 0
+    null: bool = False
+    direction: str = ""
+    
+@dataclass
+class Function:
+    name: str
+    description: str = ""
+    arguments: list[FunctionArgument] = None
+    content: str = None
+
+@dataclass
 class Script:
     name: str
     description: str
@@ -148,6 +166,7 @@ class Schema:
     tables: list[Table] = None
     views: list[View] = None
     procedures: list[Procedure] = None
+    functions: list[Function] = None
     sequences: list[Sequence] = None
     scripts: list[Script] = None
 
@@ -156,6 +175,7 @@ class Schema:
         self.tables = []
         self.views = []
         self.procedures = []
+        self.functions = []
         self.sequences = []
         self.scripts = []
 
@@ -264,14 +284,31 @@ class Schema:
                 argument.null = bool(argument_xml.get("null",False))
                 argument.direction = argument_xml.get("direction", None)
                 procedure.arguments.append(argument)
-
             procedure.content = procedure_xml.text
             self.procedures.append(procedure)
+        # functions
+        self.functions = []
+        for function_xml in xml_doc.findall("functions/function"):
+            function = Function(function_xml.get("name"))
+            function.description = function_xml.get("description", "")
+            function.arguments = []
+            for argument_xml in function_xml.find("arguments").findall("argument"):
+                argument = FunctionArgument(argument_xml.get("name"))
+                argument.description = argument_xml.get("description", "")
+                argument.data_type = DataType.from_str(argument_xml.get("dataType", "VARCHAR"))
+                argument.size = int(argument_xml.get("size",0))
+                argument.precision = int(argument_xml.get("precision",0))
+                argument.scale = int(argument_xml.get("scale",0))
+                argument.null = bool(argument_xml.get("null",False))
+                argument.direction = argument_xml.get("direction", None)
+                function.arguments.append(argument)
+            function.content = function_xml.text
+            self.functions.append(function)
         # sequences
         self.sequences = []
         for sequence_xml in xml_doc.findall("sequences/sequence"):
             sequence = Sequence(sequence_xml.get("name"))
-            sequence.desequenceion = sequence_xml.get("desequenceion", "")
+            sequence.description = sequence_xml.get("description", "")
             sequence.initValue = sequence_xml.get("initValue", 0)
             sequence.incrementBy = sequence_xml.get("incrementBy", 0)
             self.sequences.append(sequence)

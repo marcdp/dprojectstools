@@ -1,7 +1,7 @@
 import re
 import locale
 from datetime import datetime
-from .db_schema import Schema, Column, Table, Index, DataType, Procedure
+from .db_schema import Schema, Column, Table, Index, DataType, Procedure, Function
 from .generator_xml import GeneratorXml
 import fnmatch
 
@@ -296,6 +296,24 @@ def get_procedure_arguments(procedure: Procedure):
     result = ""
     index = 0
     for argument in procedure.arguments:
+        if index > 0:
+            result += ", "
+        argument_net_type = column_to_net_type(argument, prefer_decimal=True)
+        if argument.direction == "IN":
+            result += f"ByVal "
+        else:
+            result += f"ByRef "
+        if argument_net_type == "String":
+            result += f"{argument.name} As String"
+        else:
+            result += f"{argument.name} As Nullable(Of {argument_net_type})"
+        index += 1
+    return result
+
+def get_function_arguments(function: Function):
+    result = ""
+    index = 0
+    for argument in function.arguments:
         if index > 0:
             result += ", "
         argument_net_type = column_to_net_type(argument, prefer_decimal=True)
