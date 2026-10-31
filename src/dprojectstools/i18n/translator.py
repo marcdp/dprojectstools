@@ -1,4 +1,5 @@
 import boto3
+import os
 from ..secrets import SecretsManager
 
 # translate
@@ -7,13 +8,16 @@ class Translator:
     # ctor
     def __init__(self, aws_access_key_id:str = None, aws_secret_access_key: str = None):
 
-        # get credentials        
-        secrets = SecretsManager("translator")
-        if aws_access_key_id == None:
-            aws_access_key_id = secrets.get("TRANSLATOR_AWS_ACCESS_KEY_ID")
+        # Get credentials from arguments or environment variables
+        aws_access_key_id = aws_access_key_id or os.getenv("TRANSLATOR_AWS_ACCESS_KEY_ID")
+        aws_secret_access_key = aws_secret_access_key or os.getenv("TRANSLATOR_AWS_SECRET_ACCESS_KEY")
 
-        if aws_secret_access_key == None:
-            aws_secret_access_key = secrets.get("TRANSLATOR_AWS_SECRET_ACCESS_KEY")
+        # Fallback to SecretsManager
+        if not aws_access_key_id or not aws_secret_access_key:
+            secrets = SecretsManager("translator")
+            aws_access_key_id = aws_access_key_id or secrets.get("TRANSLATOR_AWS_ACCESS_KEY_ID")
+            aws_secret_access_key = aws_secret_access_key or secrets.get("TRANSLATOR_AWS_SECRET_ACCESS_KEY")
+
         # create client        
         self._translate_client = boto3.client(
             service_name="translate", 
